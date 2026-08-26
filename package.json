@@ -1,0 +1,10 @@
+{
+  "name": "today-webapp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "test:syntax": "node --check src/app.js && node --check src/model.js && node --check src/nlp-date.js && node --check src/store.js && node --check src/journal.js && node --check src/journal-record.js && node --check src/sync.js && node --check src/backup.js && node --check src/settings.js && node --check src/ui.js && node --check src/version.js && node --check sw.js"
+  }
+}
