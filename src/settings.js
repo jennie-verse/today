@@ -6,8 +6,19 @@ import * as store from "./store.js";
 import { exportBackup, importBackup, pickImportFile, daysSinceBackup } from "./backup.js";
 import { confirmDialog, toast } from "./ui.js";
 import * as sync from "./sync.js";
+import * as syncRunner from "./sync-runner.js";
 import * as journal from "./journal.js";
 import { APP_BUILD } from "./version.js";
+
+function fmtWhen(ms) {
+  if (!ms) return "never";
+  const mins = Math.floor((Date.now() - ms) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} h ago`;
+  return `${Math.floor(hours / 24)} d ago`;
+}
 
 function buildSyncSection(sec) {
   const status = document.createElement("p");
@@ -17,7 +28,7 @@ function buildSyncSection(sec) {
 
   const intro = document.createElement("p");
   intro.className = "hint";
-  intro.textContent = "Used only to authenticate Journal reports to Daybook. Today's tasks are not synced across devices.";
+  intro.textContent = "Off by default. Everything works without it — sync only adds a copy of Today, Someday, and Done tasks in your private webapp-data repository so other devices (and Journal) can use them.";
   sec.appendChild(intro);
 
   const nameRow = document.createElement("div");
@@ -64,12 +75,38 @@ function buildSyncSection(sec) {
   tokenRow.append(tokenLbl, tokenInput, tokenBtns);
   sec.appendChild(tokenRow);
 
+  // --- enable switch ---
+  const enableRow = document.createElement("div");
+  enableRow.className = "settings-row";
+  const enableLbl = document.createElement("div");
+  enableLbl.className = "lbl";
+  enableLbl.textContent = "Sync this device";
+  const enableSwitch = document.createElement("button");
+  enableSwitch.type = "button";
+  enableSwitch.className = "switch";
+  enableSwitch.setAttribute("role", "switch");
+  enableRow.append(enableLbl, enableSwitch);
+  sec.appendChild(enableRow);
+
+  const syncNowBtn = document.createElement("button");
+  syncNowBtn.type = "button";
+  syncNowBtn.className = "btn";
+  syncNowBtn.style.marginTop = "8px";
+  syncNowBtn.style.width = "100%";
+  syncNowBtn.textContent = "Sync now";
+  sec.appendChild(syncNowBtn);
+
   function refresh(message) {
     const hint = sync.tokenHint();
     tokenInput.placeholder = hint || "github_pat_…";
     nameInput.disabled = Boolean(sync.getContextId());
     nameInput.value = sync.getContextLabel() || nameInput.value;
-    status.textContent = message || (sync.isReady() ? `Ready · device ${sync.getContextId()}` : "Enter a device name and token to enable Journal.");
+    enableSwitch.setAttribute("aria-checked", String(sync.isEnabled()));
+    syncNowBtn.disabled = !sync.isReady();
+    if (message) { status.textContent = message; return; }
+    status.textContent = sync.isEnabled()
+      ? `On · device ${sync.getContextId() || "—"} · last synced ${fmtWhen(sync.getLastSyncAt())}`
+      : "Off — Today stays on this device.";
   }
 
   saveTokenBtn.addEventListener("click", () => {
@@ -81,13 +118,53 @@ function buildSyncSection(sec) {
   clearTokenBtn.addEventListener("click", async () => {
     const ok = await confirmDialog({
       title: "Clear the token?",
-      message: "Journal reporting stops until a token is entered again.",
+      message: "Sync and Journal reporting stop until a token is entered again.",
       confirmLabel: "Clear token",
       danger: true,
     });
     if (!ok) return;
     sync.clearToken();
+    sync.setEnabled(false);
     refresh("Token cleared.");
+  });
+
+  enableSwitch.addEventListener("click", async () => {
+    if (sync.isEnabled()) {
+      sync.setEnabled(false);
+      refresh();
+      return;
+    }
+    if (!sync.getToken()) { toast("Save an access token first"); return; }
+    if (!sync.getContextId()) {
+      const typed = nameInput.value.trim();
+      if (!/[a-z0-9]/i.test(typed)) {
+        toast("Enter a device name using English letters or numbers");
+        nameInput.focus();
+        return;
+      }
+      try {
+        await sync.ensureContext(typed);
+      } catch (error) {
+        refresh(sync.describeError(error));
+        return;
+      }
+      sync.setContextLabel(typed);
+    }
+    sync.setEnabled(true);
+    refresh();
+    const result = await syncRunner.runSync();
+    refresh(result?.error ? sync.describeError(result.error) : undefined);
+  });
+
+  syncNowBtn.addEventListener("click", async () => {
+    const result = await syncRunner.runSync();
+    refresh(result?.error ? sync.describeError(result.error) : "Synced.");
+  });
+
+  syncRunner.onSyncState((state, detail) => {
+    if (state === "syncing") { status.textContent = "Syncing…"; return; }
+    if (state === "error") { refresh(sync.describeError(detail?.error)); return; }
+    refresh();
   });
 
   refresh();

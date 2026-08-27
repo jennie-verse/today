@@ -57,14 +57,32 @@ function reqToPromise(req) {
   });
 }
 
-// ---------- change hook (journal.js listens here) ----------
+// ---------- change hooks (journal.js and sync-runner.js listen here) ----------
+// Mirrors loom's store.js: a local mutation notifies both hooks, but a pull
+// from sync writes through withoutTaskHook() so an incoming remote change
+// doesn't re-queue a Journal record or re-trigger tombstone bookkeeping.
 
-let taskChangeHook = null;
+let journalTaskChangeHook = null;
+let syncTaskChangeHook = null;
+let hookSuppressed = false;
+
 export function setJournalTaskChangeHook(fn) {
-  taskChangeHook = typeof fn === "function" ? fn : null;
+  journalTaskChangeHook = typeof fn === "function" ? fn : null;
 }
+export function setSyncTaskChangeHook(fn) {
+  syncTaskChangeHook = typeof fn === "function" ? fn : null;
+}
+
+export async function withoutTaskHook(fn) {
+  hookSuppressed = true;
+  try { return await fn(); }
+  finally { hookSuppressed = false; }
+}
+
 function notifyTaskChange(next, previous) {
-  if (taskChangeHook) { try { taskChangeHook(next, previous); } catch { /* journal-only, must not break saves */ } }
+  if (hookSuppressed) return;
+  if (syncTaskChangeHook) { try { syncTaskChangeHook(next, previous); } catch { /* sync never blocks a local save */ } }
+  if (journalTaskChangeHook) { try { journalTaskChangeHook(next, previous); } catch { /* journal-only, must not break saves */ } }
 }
 
 // ---------- tasks ----------

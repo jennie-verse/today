@@ -6,6 +6,7 @@ import {
 import { parseNaturalLanguage } from "./nlp-date.js";
 import * as store from "./store.js";
 import * as journal from "./journal.js";
+import * as syncRunner from "./sync-runner.js";
 import { toast, confirmDialog, announce } from "./ui.js";
 import { openSettingsSheet } from "./settings.js";
 
@@ -362,6 +363,10 @@ function handleUrlIntake() {
 async function boot() {
   state.settings = store.getSettings();
   applyFont();
+  // Local changes start queueing (tombstones/pushes) immediately, even while
+  // sync is off — turning it on later should not treat everything since
+  // install as new. Matches loom's boot order.
+  syncRunner.attach();
   journal.attachJournal();
   await refresh();
   handleUrlIntake();
@@ -373,6 +378,12 @@ async function boot() {
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("./sw.js").catch(() => { /* offline install still works via cache-on-fetch */ });
   }
+
+  // Runs only when sync is enabled and a token and context exist. Failures
+  // are silent: the app is fully usable offline and the queue keeps changes.
+  syncRunner.runSync().then((result) => {
+    if (result?.pulled) refresh();
+  }).catch(() => { /* local storage is always the source of truth */ });
 }
 
 boot();

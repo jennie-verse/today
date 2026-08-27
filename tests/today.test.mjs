@@ -4,6 +4,17 @@ import * as model from '../src/model.js';
 import { parseNaturalLanguage } from '../src/nlp-date.js';
 import { taskToJournalRecord, taskActivityRecord, journalDateFor } from '../src/journal-record.js';
 
+function memoryStorage() {
+  const values = new Map();
+  return {
+    getItem: (key) => (values.has(key) ? values.get(key) : null),
+    setItem: (key, value) => values.set(key, String(value)),
+    removeItem: (key) => values.delete(key),
+  };
+}
+globalThis.localStorage = memoryStorage();
+const sync = await import('../src/sync.js');
+
 // ---------- model.js ----------
 
 test('normalizeTask clamps title, defaults status, and caps subtasks at 5', () => {
@@ -188,4 +199,62 @@ test('taskActivityRecord keys by taskId:activityDate and hides the title when co
   assert.deepEqual(record.data.actions, ['promoted', 'completed']);
   const hidden = taskActivityRecord(entry, { title: '세탁' }, { includeContent: false });
   assert.equal(hidden.title, 'Today task');
+});
+
+// ---------- sync.js (device sync, same design as loom/tide/folio) ----------
+
+test('sync is disabled by default, matching every other app', () => {
+  assert.equal(sync.isEnabled(), false);
+  sync.setEnabled(true);
+  assert.equal(sync.isEnabled(), true);
+  sync.setEnabled(false);
+  assert.equal(sync.isEnabled(), false);
+});
+
+test('isReady requires enabled + token + context, same as loom', () => {
+  assert.equal(sync.isReady(), false);
+  sync.saveToken('github_pat_fixture');
+  assert.equal(sync.isReady(), false, 'token alone is not enough');
+  sync.setEnabled(true);
+  assert.equal(sync.isReady(), false, 'still no context id');
+  sync.clearToken();
+  sync.setEnabled(false);
+});
+
+test('a tombstone for a locally deleted task beats an older remote copy, but a newer edit undoes the tombstone', () => {
+  const deletedAt = '2026-08-26T10:00:00.000Z';
+  const tombstones = [{ id: 'task-1', deletedAt }];
+  const staleRemoteCopy = { id: 'task-1', title: 'old', updatedAt: '2026-08-26T09:00:00.000Z' };
+  const survivor = { id: 'task-2', title: 'kept', updatedAt: '2026-08-26T09:00:00.000Z' };
+  const revivedByLaterEdit = { id: 'task-1', title: 'edited after delete', updatedAt: '2026-08-26T11:00:00.000Z' };
+
+  assert.deepEqual(sync.applyTaskTombstones([staleRemoteCopy, survivor], tombstones), [survivor]);
+  assert.deepEqual(sync.applyTaskTombstones([revivedByLaterEdit, survivor], tombstones), [revivedByLaterEdit, survivor]);
+});
+
+test('deleting then recreating the same id locally clears its tombstone, so it is not deleted again on the next sync', () => {
+  sync.recordTaskDeletion({ id: 'task-9' });
+  assert.deepEqual(sync.getTaskTombstones().map((t) => t.id), ['task-9']);
+  sync.clearTaskTombstone('task-9');
+  assert.deepEqual(sync.getTaskTombstones(), []);
+});
+
+test('merging tombstones from another device keeps the newest deletedAt per id, deduplicated', () => {
+  sync.recordTaskDeletion({ id: 'dup' });
+  const [{ deletedAt: firstDeletedAt }] = sync.getTaskTombstones().filter((t) => t.id === 'dup');
+  const merged = sync.mergeTaskTombstones([
+    { id: 'dup', deletedAt: '2020-01-01T00:00:00.000Z' }, // older — must lose
+    { id: 'other', deletedAt: '2026-08-26T12:00:00.000Z' },
+  ]);
+  const dup = merged.find((t) => t.id === 'dup');
+  assert.equal(dup.deletedAt, firstDeletedAt, 'the newer local tombstone must not be overwritten by an older incoming one');
+  assert.ok(merged.some((t) => t.id === 'other'));
+  sync.clearTaskTombstone('dup');
+  sync.clearTaskTombstone('other');
+});
+
+test('describeError produces a plain English line for every error type sync.js can throw', () => {
+  assert.match(sync.describeError({ type: 'auth' }), /token/i);
+  assert.match(sync.describeError({ type: 'toolarge' }), /too large/i);
+  assert.match(sync.describeError(null), /failed/i);
 });

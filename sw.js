@@ -1,5 +1,5 @@
 // Keep VERSION in step with APP_BUILD in ./src/version.js.
-const VERSION = "2026.08.26-today-v1";
+const VERSION = "2026.08.26-sync1";
 const CACHE_NAME = `today-${VERSION}`;
 
 const APP_SHELL = [
@@ -15,6 +15,7 @@ const APP_SHELL = [
   "./src/nlp-date.js",
   "./src/store.js",
   "./src/sync.js",
+  "./src/sync-runner.js",
   "./src/journal.js",
   "./src/journal-record.js",
   "./src/backup.js",

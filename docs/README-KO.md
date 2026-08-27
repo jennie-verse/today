@@ -22,7 +22,8 @@ today/
 │  ├─ model.js                 항목 검증, 3칸 규칙, Someday/Done/후보 분류, 자정 이후 되돌리기
 │  ├─ nlp-date.js              자연어 날짜·시각 파서 (정규식만, AI 없음)
 │  ├─ store.js                 IndexedDB(`today-db`) 저장, localStorage 설정
-│  ├─ sync.js                  Journal 인증용 device name/token (today 자체 동기화는 없음)
+│  ├─ sync.js                  webapp-data 기기 간 동기화(2026-08-26 추가, 기본 꺼짐) + Journal 인증용 device name/token
+│  ├─ sync-runner.js           언제 동기화를 돌릴지 — 받아오기→합치기→올리기 순서, tombstone 기록
 │  ├─ journal.js               shared/v2 Journal 연동 (선택 사항, 기본 꺼짐)
 │  ├─ journal-record.js        task/task-activity Journal 레코드 만들기
 │  ├─ backup.js                JSON 내보내기·가져오기
@@ -54,6 +55,22 @@ today/
 
 기기를 바꾸거나 브라우저 저장소가 지워지면 데이터가 사라집니다. 정기적으로 Settings → Export JSON으로 백업하세요. 자세한 사용법은 [사용 안내](USER-GUIDE-KO.md)를 확인하세요.
 
+## 기기 간 동기화 (2026-08-26 추가)
+
+today는 비공개 저장소 `webapp-data`와 loom·tide·folio가 이미 쓰는 방식을 그대로 따릅니다 — **새 구조를 만들지 않았습니다.** 동기화는 기본으로 **꺼져 있고**, 꺼진 상태에서도 앱은 완전히 동작합니다. 로컬 저장이 언제나 먼저입니다.
+
+| 경로 | 내용 |
+|---|---|
+| `today/data.<기기>.json` | Today·오늘 후보·Someday·Done·하위 단계 전체(설정은 백업용으로만 함께 올라가고, 받을 때 적용하지 않음) |
+
+관련 코드는 `src/sync.js`(GitHub 통신)와 `src/sync-runner.js`(언제·무엇을 보낼지)에 있습니다.
+
+- **병합 규칙**: 같은 id는 `updatedAt`이 최신인 쪽이 이깁니다(loom과 동일한 `mergeById`).
+- **삭제 동기화**: 기기에서 할 일을 지우면 tombstone(`{id, deletedAt}`)이 `today.taskTombstones.v1`에 남고 다른 기기로 퍼져, 지운 항목이 다시 살아나지 않습니다. 삭제 후 다시 그 id로 수정된 기록이 들어오면(사실상 재작성) tombstone보다 최신이면 살아납니다 — loom의 `applyBlockTombstones`와 같은 규칙입니다.
+- **오프라인 → 온라인 복귀**: 오프라인 중 만든 항목도 로컬에는 즉시 저장됩니다. 온라인이 되면 다음 동기화(자동 4초 디바운스 또는 Settings → Sync now)에서 **id 기준으로 합쳐지므로 중복 없이 한 번만** 반영됩니다.
+- **켜는 순서**: Settings → Sync에서 Device name(영문+숫자)을 먼저 적고, Access token을 저장한 뒤 **Sync this device**를 켭니다. Journal과 컨텍스트 ID를 공유하므로, Journal을 먼저 켰다면 같은 기기 이름이 이어집니다.
+- **기본값**: 다른 모든 앱과 동일하게 **꺼짐**입니다.
+
 ## 설계 원칙 — 코드를 고칠 때도 지켜야 함
 
 1. **오늘 칸은 3개 고정.** `model.js`의 `TODAY_SLOTS`를 늘리는 것은 계획에 없는 변경입니다.
@@ -62,5 +79,6 @@ today/
 4. **자연어 파서는 반복 표현을 일부러 인식하지 않습니다.** `매주`/`매일`/`every` 뒤에 오는 날짜 단어는 건너뜁니다.
 5. **`sw.js`의 `VERSION`과 `src/version.js`의 `APP_BUILD`는 항상 같은 값이어야 합니다.**
 6. **`shared/v2/journal.js`는 additive로만 확장합니다.** `today` 앱과 `task`/`task-activity` kind를 shared 저장소에 이미 등록했습니다 (v3로 올리지 않음).
+7. **동기화가 3칸 고정·자동 이월 금지·숫자 미표시 원칙을 흔들면 안 됩니다.** `pullData()`는 다른 기기의 `today` 상태(status)를 그대로 받아옵니다 — 예를 들어 기기 A가 오늘 항목 3개를 다 채운 상태에서 기기 B가 동기화해도, `TODAY_SLOTS` 초과분을 자동으로 밀어내거나 화면에 개수를 더 보여주는 로직을 추가하지 않습니다. 렌더링은 언제나 `todaySlotTasks()`(상위 3개까지만 그림)를 그대로 씁니다.
 
 현재 저장소가 직접 소유하는 `tests/today.test.mjs`가 model·파서·Journal 레코드 경계를 확인합니다. `npm test`로 재실행합니다.

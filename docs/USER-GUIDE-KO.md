@@ -55,9 +55,26 @@ Settings(⚙) → Backup
 - **Export JSON** — `today-backup-YYYY-MM-DD.json` 파일로 전체 저장.
 - **Import JSON** — Merge(둘 다 유지, 최신 것이 이김) 또는 Replace all(현재 데이터를 지우고 교체) 중 선택. Replace all은 실행 취소(Undo) 토스트가 잠깐 뜹니다.
 
+## 기기 간 동기화(Sync) — 선택 사항, 기본 꺼짐(2026-08-26 추가)
+
+iPhone과 iPad에서 같은 할 일을 보고 싶을 때 켭니다. 꺼진 상태에서는 각 기기가 완전히 따로 동작합니다.
+
+1. Settings(⚙) → Sync에서 **Device name**을 영문+숫자로 적습니다(예: `iphone-home`). 이 이름은 켜는 순간 파일 이름으로 굳고 나중에 바꿀 수 없습니다.
+2. **Access token**(GitHub Personal Access Token)을 붙여 넣고 **Save token**을 누릅니다.
+3. **Sync this device**를 켭니다.
+4. 다른 기기(예: iPad)에서도 같은 토큰으로 1~3을 반복하되, **Device name은 기기마다 다르게** 적습니다(예: iPhone은 `iphone-home`, iPad는 `ipad-home`).
+
+켠 뒤에는:
+
+- Today·오늘 후보·Someday·Done·하위 단계가 전부 동기화됩니다.
+- 한 기기에서 만든 항목을 다른 기기에서 체크하거나 완료할 수 있습니다.
+- 한 기기에서 지운 항목은 다른 기기에서도 사라집니다.
+- **오프라인에서 만든 항목도 안전합니다.** 온라인이 되면 자동으로(또는 Settings의 **Sync now**를 눌러) 합쳐지며, 같은 항목이 두 번 생기지 않습니다.
+- **오늘 3칸 고정 원칙은 동기화 후에도 그대로입니다.** 다른 기기에서 Today를 이미 3개 채웠다면, 이 기기에서도 Today는 여전히 3칸까지만 보입니다 — 동기화가 이 제약을 늘리거나 밀린 개수를 보여주지 않습니다.
+
 ## Journal(Daybook 연동) — 선택 사항, 기본 꺼짐
 
-Settings → Sync에서 기기 이름과 GitHub 액세스 토큰을 넣고, Journal 섹션의 "Include in journal"을 켜면 오늘 항목이 Daybook에 표시됩니다.
+Settings → Sync에서 기기 이름과 GitHub 액세스 토큰을 넣고, Journal 섹션의 "Include in journal"을 켜면 오늘 항목이 Daybook에 표시됩니다. (Sync 자체를 켜지 않아도 Journal만 따로 켤 수 있습니다 — 둘은 독립적입니다.)
 
 - "Upload titles to private Journal"을 끄면 할 일 제목 대신 "Today task"만 전송됩니다.
 - "Include subtask text"는 기본 꺼짐입니다. 켜지 않으면 하위 단계의 **개수**(예: 1/2)만 전송되고 **제목은 전송되지 않습니다.**
