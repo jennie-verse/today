@@ -126,7 +126,14 @@ export function doneTasksByDate(tasks) {
 }
 
 export function todaySlotTasks(tasks, todayDateKey) {
-  return tasks.filter((t) => t.status === "today" && t.todayDate === todayDateKey);
+  return tasks.filter((t) => t.status === "today" && t.todayDate === todayDateKey).slice(0, TODAY_SLOTS);
+}
+
+// Two devices can each fill an available slot before either sees the other's
+// edit. Never hide or silently demote the merged extras: the UI exposes them in
+// a review list so the person can decide what moves back to Someday.
+export function todayOverflowTasks(tasks, todayDateKey) {
+  return tasks.filter((t) => t.status === "today" && t.todayDate === todayDateKey).slice(TODAY_SLOTS);
 }
 
 // ---------- activity inference (for the local ledger and Journal) ----------

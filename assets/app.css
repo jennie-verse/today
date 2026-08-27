@@ -114,6 +114,14 @@ a { color: inherit; }
   display: flex; align-items: center; justify-content: center; color: var(--text-3);
   font-size: calc(var(--f) * 0.95); border-style: dashed;
 }
+.overflow-section {
+  padding: 10px 12px 12px; border: 1px solid var(--peach); border-radius: 14px;
+  background: color-mix(in srgb, var(--peach) 14%, var(--card));
+}
+.overflow-section .section-title { margin-bottom: 2px; }
+.review-hint { color: var(--text-2); font-size: calc(var(--f) * 0.88); line-height: 1.5; margin-bottom: 8px; }
+.overflow-section .group-list { display: flex; flex-direction: column; gap: 6px; }
+.overflow-row { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; }
 
 .task-row { display: flex; align-items: flex-start; gap: 8px; }
 .task-row .check {

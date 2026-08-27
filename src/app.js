@@ -1,7 +1,7 @@
 import {
   DEFAULT_SETTINGS, MAX_SUBTASKS, TODAY_SLOTS,
   normalizeTask, subtaskProgress, todayKey,
-  canPromoteToToday, reconcileToday, todayCandidates, somedayTasks, doneTasksByDate, todaySlotTasks,
+  canPromoteToToday, reconcileToday, todayCandidates, somedayTasks, doneTasksByDate, todaySlotTasks, todayOverflowTasks,
 } from "./model.js";
 import { parseNaturalLanguage } from "./nlp-date.js";
 import * as store from "./store.js";
@@ -265,6 +265,17 @@ function render() {
       slotsHost.appendChild(box);
     }
   }
+
+  const overflow = todayOverflowTasks(state.tasks, key);
+  $("section-overflow").hidden = overflow.length === 0;
+  $("overflow-count").textContent = `(${overflow.length})`;
+  const overflowHost = $("overflow-list");
+  overflowHost.replaceChildren();
+  overflow.forEach((task) => {
+    const box = node("div", "overflow-row");
+    box.appendChild(taskRow(task, { context: "today" }));
+    overflowHost.appendChild(box);
+  });
 
   const candidates = todayCandidates(state.tasks, key);
   $("section-candidates").hidden = candidates.length === 0;

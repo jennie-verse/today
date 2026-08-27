@@ -53,6 +53,20 @@ test('the 3-slot rule only counts today-status tasks for the given day', () => {
   assert.equal(model.canPromoteToToday(full, '2026-08-26'), false);
 });
 
+test('a concurrent-device overflow keeps three visible slots and exposes every extra for review', () => {
+  const tasks = Array.from({ length: 5 }, (_, index) => model.normalizeTask({
+    title: `device task ${index + 1}`, status: 'today', todayDate: '2026-08-26',
+  }));
+  assert.deepEqual(model.todaySlotTasks(tasks, '2026-08-26').map((task) => task.title), [
+    'device task 1', 'device task 2', 'device task 3',
+  ]);
+  assert.deepEqual(model.todayOverflowTasks(tasks, '2026-08-26').map((task) => task.title), [
+    'device task 4', 'device task 5',
+  ]);
+  assert.equal(model.countTodaySlots(tasks, '2026-08-26'), 5);
+  assert.equal(model.canPromoteToToday(tasks, '2026-08-26'), false);
+});
+
 test('reconcileToday silently reverts yesterday leftovers to Someday and nothing else', () => {
   const tasks = [
     model.normalizeTask({ title: 'stale', status: 'today', todayDate: '2026-08-25' }),
