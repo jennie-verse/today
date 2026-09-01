@@ -79,6 +79,7 @@ Settings → Sync에서 기기 이름과 GitHub 액세스 토큰을 넣고, Jour
 - "Upload titles to private Journal"을 끄면 할 일 제목 대신 "Today task"만 전송됩니다.
 - "Include subtask text"는 기본 꺼짐입니다. 켜지 않으면 하위 단계의 **개수**(예: 1/2)만 전송되고 **제목은 전송되지 않습니다.**
 - Someday에만 있는 항목(아직 Today에 넣지 않은 항목)은 Journal에 전송되지 않습니다. Today에 넣거나 완료해야 Daybook에 나타납니다.
+- Journal 기록에는 그날 마지막으로 속한 목록(`destination`: Today 또는 Someday)과 완료 여부(`done`)·최종 상태(`finalStatus`)가 함께 저장됩니다. 같은 날 Today↔Someday를 여러 번 오간 항목도 Daybook에는 마지막 목적지만 한 번 표시됩니다. 완료 후 다시 열어(재오픈) 미완료로 되돌린 항목은 완료로 잘못 표시되지 않습니다.
 
 ## Tide에서 보내기(Send to today)
 

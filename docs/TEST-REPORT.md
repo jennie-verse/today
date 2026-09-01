@@ -102,3 +102,21 @@
 ### Pending — 실기기 + 실제 토큰 필요
 
 - [ ] **실제 iPhone·iPad 두 대에 같은 토큰으로 Sync를 켜고**: (1) 아이패드에서 항목을 추가하면 아이폰에 나타나는지 (2) 한쪽에서 체크·완료하면 다른 쪽에도 반영되는지 (3) 한쪽에서 삭제하면 다른 쪽에서도 사라지는지 (4) 한쪽을 비행기 모드로 두고 항목을 만든 뒤 온라인 복귀 시 중복 없이 한 번만 나타나는지
+
+---
+
+## 2026-09-01 — 문서 갱신 (Daybook Markdown Export Revision 4, today는 코드 변경 없음)
+
+이번 라운드에서 `today` 앱 자체의 코드 변경은 없습니다(작업 지시서 C-1 기준, docs-only). 이전 커밋(`feat: preserve task destination in journal`)에서 이미 구현된 `destination`/`done`/`finalStatus` Journal 필드가 `docs/`에 반영되지 않았던 누락을 이번에 채웠습니다.
+
+### 갱신한 문서
+
+- `docs/USER-GUIDE-KO.md` — Journal 절에 `destination`/`done`/`finalStatus` 필드 설명과, 같은 날 여러 번 오간 항목이 마지막 목적지로만 표시된다는 내용, 완료 후 재오픈이 다시 완료로 표시되지 않는다는 내용을 추가.
+
+### 통과 — 자동
+
+`npm test` **26/26 통과**(변경 없음), `npm run test:syntax` 통과. 코드가 바뀌지 않았으므로 새 회귀 테스트는 추가하지 않았습니다.
+
+### 관련
+
+Daybook 쪽에서 이 필드들을 사용하는 `today()` serializer의 완료 판정 버그(재오픈한 할 일이 완료로 잘못 표시되던 문제)는 `Published/daybook`에서 별도로 수정했습니다. `Published/today`는 이번 라운드에서 커밋되지 않았습니다(코드 변경 없음, git repo 원격 push도 없음).
