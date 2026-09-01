@@ -204,13 +204,16 @@ test('a plain Someday task (no todayDate, not done) cannot be projected as a tas
   assert.throws(() => taskToJournalRecord(someday, {}));
 });
 
-test('taskActivityRecord keys by taskId:activityDate and hides the title when content is off', () => {
-  const entry = { taskId: 't1', date: '2026-08-26', actions: ['promoted', 'completed'], firstAt: '2026-08-26T09:00:00-05:00', lastAt: '2026-08-26T09:05:00-05:00', title: 'fallback' };
+test('taskActivityRecord keeps the final destination and done state and hides the title when content is off', () => {
+  const entry = { taskId: 't1', date: '2026-08-26', actions: ['promoted', 'completed'], firstAt: '2026-08-26T09:00:00-05:00', lastAt: '2026-08-26T09:05:00-05:00', title: 'fallback', destination: 'today', done: true, finalStatus: 'done' };
   const record = taskActivityRecord(entry, { title: '세탁' }, { includeContent: true });
   assert.equal(record.id, 't1:2026-08-26');
   assert.equal(record.kind, 'task-activity');
   assert.equal(record.title, '세탁');
   assert.deepEqual(record.data.actions, ['promoted', 'completed']);
+  assert.equal(record.data.destination, 'today');
+  assert.equal(record.data.done, true);
+  assert.equal(record.data.finalStatus, 'done');
   const hidden = taskActivityRecord(entry, { title: '세탁' }, { includeContent: false });
   assert.equal(hidden.title, 'Today task');
 });

@@ -98,6 +98,9 @@ export function replaceActivityLedger(rows, { merge = false } = {}) {
         date: row.date, taskId: row.taskId, title: String(row.title || ""),
         actions: [...new Set(row.actions.filter((a) => typeof a === "string"))],
         firstAt: row.firstAt, lastAt: row.lastAt,
+        ...(["today", "someday"].includes(row.destination) ? { destination: row.destination } : {}),
+        done: row.done === true,
+        ...(["today", "someday", "done", "deleted"].includes(row.finalStatus) ? { finalStatus: row.finalStatus } : {}),
       };
     }
   }
@@ -114,10 +117,15 @@ function recordLocalActivity(next, previous) {
   const entries = readActivity();
   const current = entries[key];
   const action = inferTaskAction(next, previous);
+  const destination = [next?.status, previous?.status, current?.destination].find((value) => value === "today" || value === "someday");
+  const finalStatus = next?.status || "deleted";
   entries[key] = {
     date, taskId: task.id, title: String(task.title || ""),
     actions: [...new Set([...(current?.actions || []), action])],
     firstAt: current?.firstAt || at, lastAt: at,
+    ...(destination ? { destination } : {}),
+    done: next?.status === "done",
+    finalStatus,
   };
   const cutoff = Date.now() - 90 * 86400000;
   Object.keys(entries).forEach((id) => { if (Date.parse(entries[id].lastAt) < cutoff) delete entries[id]; });
