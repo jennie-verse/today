@@ -1,5 +1,5 @@
 // Keep VERSION in step with APP_BUILD in ./src/version.js.
-const VERSION = "2026.09.02-carryover1";
+const VERSION = "2026.09.02-swcachefix1";
 const CACHE_NAME = `today-${VERSION}`;
 
 const APP_SHELL = [
@@ -37,10 +37,19 @@ const OPTIONAL_ASSETS = [
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_NAME);
-    await cache.addAll(APP_SHELL);
+    // cache: 'reload' bypasses the browser's own HTTP cache — without it, a
+    // recently-visited asset can still be HTTP-cache-fresh and get copied
+    // straight into the new versioned CACHE_NAME unchanged, silently
+    // defeating the whole point of bumping VERSION on a real edit.
+    await Promise.all(APP_SHELL.map(async (path) => {
+      const response = await fetch(new URL(path, self.registration.scope), { cache: "reload" });
+      await cache.put(path, response);
+    }));
     await Promise.all(OPTIONAL_ASSETS.map(async (path) => {
-      try { await cache.add(new URL(path, self.registration.scope)); }
-      catch { /* the fetch handler caches it on a later run */ }
+      try {
+        const response = await fetch(new URL(path, self.registration.scope), { cache: "reload" });
+        await cache.put(path, response);
+      } catch { /* the fetch handler caches it on a later run */ }
     }));
     await self.skipWaiting();
   })());
