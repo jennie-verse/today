@@ -173,6 +173,27 @@ async function queueTaskChange(next, previous) {
   }
 }
 
+// Called by reconciliation when a task rolls forward into today's date
+// unfinished. Projects a fresh "task" record onto the new day so Daybook
+// keeps showing it (still-open tasks render struck through there) without
+// touching — let alone tombstoning — the record(s) already written for the
+// earlier day(s) it was open. Not a discrete user action, so no
+// task-activity entry is logged for it.
+export async function recordRollover(tasks) {
+  if (!isJournalEnabled() || !tasks?.length) return;
+  const client = await getClient();
+  if (!client) return;
+  const includeContent = isJournalContentEnabled();
+  const includeSubtaskText = isSubtaskTextEnabled();
+  for (const task of tasks) {
+    const day = journalDateFor(task);
+    if (!day) continue;
+    try {
+      await client.enqueue(taskToJournalRecord(task, { includeContent, includeSubtaskText }), { date: day });
+    } catch { /* best effort — the local task state is already correct */ }
+  }
+}
+
 export function attachJournal() {
   store.setJournalTaskChangeHook((next, previous) => {
     queueTaskChange(next, previous).catch(() => publish({ status: "error", errorCode: "QUEUE_FAILED" }));
@@ -188,7 +209,8 @@ export async function toggleJournal(enabled, preferredName = "") {
   clientPromise = null;
   setJournalEnabled(enabled);
   publish({ status: enabled ? "ready" : "disabled", errorCode: "" });
-  await reportJournalStatus({ enabledAt: enabled ? localIso() : undefined });
+  const reported = await reportJournalStatus({ enabledAt: enabled ? localIso() : undefined });
+  if (enabled && !reported) return { ok: false, reason: "status" };
   return { ok: true };
 }
 

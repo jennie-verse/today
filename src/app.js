@@ -1,7 +1,7 @@
 import {
-  DEFAULT_SETTINGS, MAX_SUBTASKS, TODAY_SLOTS,
+  DEFAULT_SETTINGS,
   normalizeTask, subtaskProgress, todayKey,
-  canPromoteToToday, reconcileToday, todayCandidates, somedayTasks, doneTasksByDate, todaySlotTasks, todayOverflowTasks,
+  reconcileToday, todayCandidates, somedayTasks, doneTasksByDate, todaySlotTasks,
 } from "./model.js";
 import { parseNaturalLanguage } from "./nlp-date.js";
 import * as store from "./store.js";
@@ -23,11 +23,12 @@ async function loadTasks() {
 }
 
 async function reconcile() {
-  const { tasks, reverted } = reconcileToday(state.tasks, todayKey());
-  if (!reverted.length) return;
-  const toWrite = tasks.filter((t) => reverted.includes(t.id));
+  const { tasks, rolled } = reconcileToday(state.tasks, todayKey());
+  if (!rolled.length) return;
+  const toWrite = tasks.filter((t) => rolled.includes(t.id));
   await store.bulkPutTasks(toWrite);
   state.tasks = tasks;
+  journal.recordRollover(toWrite).catch(() => {});
 }
 
 async function refresh() {
@@ -85,10 +86,6 @@ async function completeTask(task) {
 }
 
 async function promoteTask(task) {
-  if (!canPromoteToToday(state.tasks, todayKey())) {
-    toast("Today is full — remove one first");
-    return;
-  }
   const next = normalizeTask({ ...task, status: "today", todayDate: todayKey() });
   await store.putTask(next);
   toast(`Moved to Today`);
@@ -99,22 +96,6 @@ async function deferTask(task) {
   const next = normalizeTask({ ...task, status: "someday", todayDate: null });
   await store.putTask(next);
   toast(`Moved to Someday`);
-  await refresh();
-}
-
-async function deferAllOverflow() {
-  const overflow = todayOverflowTasks(state.tasks, todayKey());
-  if (!overflow.length) return;
-  const ok = await confirmDialog({
-    title: "Move all to Someday?",
-    message: `${overflow.length} task${overflow.length === 1 ? "" : "s"} will move from Today to Someday.`,
-    confirmLabel: "Move all",
-  });
-  if (!ok) return;
-  for (const task of overflow) {
-    await store.putTask(normalizeTask({ ...task, status: "someday", todayDate: null }));
-  }
-  toast(overflow.length === 1 ? "Moved to Someday" : `Moved ${overflow.length} tasks to Someday`);
   await refresh();
 }
 
@@ -129,6 +110,86 @@ async function deleteTask(task) {
   await store.deleteTaskById(task.id);
   toast("Deleted");
   await refresh();
+}
+
+// Edits a task's title (and, for tasks created via natural-language input,
+// its date/time) through the same NL parser and normalizeTask/store.putTask
+// path as creation — so IndexedDB, sync, and Journal ("edited" activity via
+// inferTaskAction) all stay consistent with every other mutation.
+function openTaskEditor(task) {
+  const overlay = node("div", "overlay");
+  const frame = node("div", "frame");
+  const sheet = node("div", "sheet");
+  sheet.setAttribute("role", "dialog");
+  sheet.setAttribute("aria-modal", "true");
+  const header = node("div", "sheet-hdr");
+  header.append(node("h2", "", "Edit task"), (() => {
+    const b = node("button", "ico", "✕"); b.type = "button"; b.setAttribute("aria-label", "Close"); return b;
+  })());
+  const closeBtn = header.lastChild;
+
+  const body = node("div", "sheet-body");
+  const input = document.createElement("input");
+  input.type = "text";
+  input.maxLength = 200;
+  input.value = task.title;
+  input.style.width = "100%";
+  input.setAttribute("aria-label", "Task title");
+  const hint = node("p", "hint", "You can include a date/time, e.g. \"tomorrow 9am\".");
+  body.append(input, hint);
+
+  const foot = node("div", "sheet-foot");
+  const cancelBtn = node("button", "btn ghost", "Cancel");
+  cancelBtn.type = "button";
+  const saveBtn = node("button", "btn primary", "Save");
+  saveBtn.type = "button";
+  foot.append(cancelBtn, saveBtn);
+
+  let composing = false;
+  input.addEventListener("compositionstart", () => { composing = true; });
+  input.addEventListener("compositionend", () => { composing = false; });
+
+  async function save() {
+    if (composing) return;
+    const raw = input.value;
+    if (!raw.trim()) { toast("Title is required."); return; }
+    const parsed = parseNaturalLanguage(raw, { now: new Date() });
+    try {
+      const next = normalizeTask({
+        ...task,
+        title: parsed.title,
+        scheduledFor: parsed.scheduledFor,
+        scheduledAtMinutes: parsed.scheduledAtMinutes,
+      });
+      await store.putTask(next);
+      close();
+      toast("Task updated");
+      await refresh();
+    } catch (err) {
+      toast(err?.message || "Couldn't update that task");
+    }
+  }
+
+  function close() {
+    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    document.removeEventListener("keydown", onKey);
+  }
+  function onKey(e) { if (e.key === "Escape") close(); }
+  closeBtn.addEventListener("click", close);
+  cancelBtn.addEventListener("click", close);
+  saveBtn.addEventListener("click", save);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !composing) { e.preventDefault(); save(); }
+  });
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+  document.addEventListener("keydown", onKey);
+
+  sheet.append(header, body, foot);
+  frame.appendChild(sheet);
+  overlay.appendChild(frame);
+  $("sheet-host").appendChild(overlay);
+  input.focus();
+  input.select();
 }
 
 function openSubtaskEditor(task) {
@@ -154,7 +215,7 @@ function openSubtaskEditor(task) {
   const addBtn = node("button", "btn", "Add");
   addBtn.type = "button";
   addRow.append(addInput, addBtn);
-  const limitHint = node("p", "hint", `Up to ${MAX_SUBTASKS} subtasks.`);
+  const limitHint = node("p", "hint", "");
   body.append(addRow, limitHint);
 
   let current = task;
@@ -171,6 +232,44 @@ function openSubtaskEditor(task) {
         await store.putTask(current);
         renderList();
       });
+      const titleEl = node("span", "title", s.title);
+      titleEl.style.cursor = "pointer";
+      titleEl.setAttribute("role", "button");
+      titleEl.setAttribute("tabindex", "0");
+      titleEl.setAttribute("aria-label", `Edit: ${s.title}`);
+      async function startEdit() {
+        const input = document.createElement("input");
+        input.type = "text";
+        input.maxLength = 100;
+        input.value = s.title;
+        input.style.flex = "1";
+        row.replaceChild(input, titleEl);
+        input.focus();
+        input.select();
+        let editComposing = false;
+        input.addEventListener("compositionstart", () => { editComposing = true; });
+        input.addEventListener("compositionend", () => { editComposing = false; });
+        let done = false;
+        async function commit() {
+          if (done) return;
+          done = true;
+          const value = input.value.trim();
+          if (value && value !== s.title) {
+            current = normalizeTask({ ...current, subtasks: current.subtasks.map((x) => x.id === s.id ? { ...x, title: value.slice(0, 100) } : x) });
+            await store.putTask(current);
+          }
+          renderList();
+        }
+        input.addEventListener("blur", commit);
+        input.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" && !editComposing) { e.preventDefault(); input.blur(); }
+          if (e.key === "Escape") { done = true; renderList(); }
+        });
+      }
+      titleEl.addEventListener("click", startEdit);
+      titleEl.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); startEdit(); }
+      });
       const del = node("button", "", "✕");
       del.type = "button"; del.setAttribute("aria-label", `Remove: ${s.title}`);
       del.style.minWidth = "44px"; del.style.minHeight = "44px"; del.style.background = "none"; del.style.border = "0"; del.style.color = "var(--text-3)"; del.style.cursor = "pointer";
@@ -179,14 +278,12 @@ function openSubtaskEditor(task) {
         await store.putTask(current);
         renderList();
       });
-      row.append(check, node("span", "title", s.title), del);
+      row.append(check, titleEl, del);
       list.appendChild(row);
     });
-    addBtn.disabled = current.subtasks.length >= MAX_SUBTASKS;
-    addInput.disabled = addBtn.disabled;
-    limitHint.textContent = current.subtasks.length >= MAX_SUBTASKS
-      ? `Limit reached (${MAX_SUBTASKS}).`
-      : `${current.subtasks.length}/${MAX_SUBTASKS} subtasks.`;
+    limitHint.textContent = current.subtasks.length
+      ? `${current.subtasks.length} subtask${current.subtasks.length === 1 ? "" : "s"}. Tap a title to rename it.`
+      : "No subtasks yet.";
   }
   renderList();
 
@@ -196,7 +293,7 @@ function openSubtaskEditor(task) {
   async function addSubtask() {
     if (composing) return;
     const title = addInput.value.trim();
-    if (!title || current.subtasks.length >= MAX_SUBTASKS) return;
+    if (!title) return;
     current = normalizeTask({ ...current, subtasks: [...current.subtasks, { title, done: false }] });
     await store.putTask(current);
     addInput.value = "";
@@ -239,6 +336,7 @@ function taskRow(task, { context }) {
 
   const actions = node("div", "actions");
   if (context !== "done") {
+    actions.appendChild(actionButton("Edit task", "✏", () => openTaskEditor(task)));
     actions.appendChild(actionButton("Edit subtasks", "✎", () => openSubtaskEditor(task)));
   }
   if (context === "today") {
@@ -268,30 +366,18 @@ function render() {
   const key = todayKey();
 
   const slots = todaySlotTasks(state.tasks, key);
-  $("today-count").textContent = `${slots.length}/${TODAY_SLOTS}`;
+  $("today-count").textContent = `${slots.length}`;
   const slotsHost = $("today-slots");
   slotsHost.replaceChildren();
-  for (let i = 0; i < TODAY_SLOTS; i += 1) {
-    if (slots[i]) {
+  if (!slots.length) {
+    slotsHost.appendChild(node("div", "slot empty", "Nothing in Today — add a task or move one from Someday"));
+  } else {
+    slots.forEach((task) => {
       const box = node("div", "slot");
-      box.appendChild(taskRow(slots[i], { context: "today" }));
+      box.appendChild(taskRow(task, { context: "today" }));
       slotsHost.appendChild(box);
-    } else {
-      const box = node("div", "slot empty", "Empty slot — add a task or move one from Someday");
-      slotsHost.appendChild(box);
-    }
+    });
   }
-
-  const overflow = todayOverflowTasks(state.tasks, key);
-  $("section-overflow").hidden = overflow.length === 0;
-  $("overflow-count").textContent = `(${overflow.length})`;
-  const overflowHost = $("overflow-list");
-  overflowHost.replaceChildren();
-  overflow.forEach((task) => {
-    const box = node("div", "overflow-row");
-    box.appendChild(taskRow(task, { context: "today" }));
-    overflowHost.appendChild(box);
-  });
 
   const candidates = todayCandidates(state.tasks, key);
   $("section-candidates").hidden = candidates.length === 0;
@@ -401,7 +487,6 @@ async function boot() {
   $("open-settings").addEventListener("click", () => {
     openSettingsSheet({ onChanged: (settings) => { state.settings = settings; applyFont(); } });
   });
-  $("overflow-move-all").addEventListener("click", deferAllOverflow);
 
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("./sw.js").catch(() => { /* offline install still works via cache-on-fetch */ });

@@ -6,8 +6,6 @@ export const LIMITS = {
   subtaskTitle: 100,
 };
 
-export const TODAY_SLOTS = 3;
-export const MAX_SUBTASKS = 5;
 export const FONT_STEPS = [6, 8, 10, 12, 14, 17];
 export const DEFAULT_SETTINGS = {
   font: 12,
@@ -40,7 +38,7 @@ export function makeId() {
 // ---------- task normalization ----------
 
 // A task's lifecycle lives entirely in `status`:
-//   'today'   — occupies one of the 3 fixed Today slots for `todayDate`
+//   'today'   — in today's list (unlimited) for `todayDate`
 //   'someday' — backlog; may carry a `scheduledFor` proposal (not a deadline)
 //   'done'    — completed; grouped by `doneDate`
 export const STATUSES = new Set(["today", "someday", "done"]);
@@ -56,7 +54,7 @@ export function normalizeTask(draft) {
   if (!title) throw { field: "title", message: "Title is required." };
   const status = STATUSES.has(draft.status) ? draft.status : "someday";
   const subtasks = Array.isArray(draft.subtasks)
-    ? draft.subtasks.slice(0, MAX_SUBTASKS).map(normalizeSubtask)
+    ? draft.subtasks.map(normalizeSubtask)
     : [];
   return {
     id: draft.id || makeId(),
@@ -79,29 +77,30 @@ export function subtaskProgress(task) {
   return { total: subtasks.length, done: subtasks.filter((s) => s.done).length };
 }
 
-// ---------- 3-slot rule ----------
+// ---------- Today list (unlimited — no slot ceiling) ----------
 
 export function countTodaySlots(tasks, todayDateKey) {
   return tasks.filter((t) => t.status === "today" && t.todayDate === todayDateKey).length;
 }
 
-export function canPromoteToToday(tasks, todayDateKey) {
-  return countTodaySlots(tasks, todayDateKey) < TODAY_SLOTS;
+// Today has no upper bound anymore; promotion is always allowed.
+export function canPromoteToToday() {
+  return true;
 }
 
 // Reconciliation run on load: a task left over in Today from a previous day
-// silently reverts to Someday. This is the mechanism behind "nothing carries
-// over automatically" — there is no "yesterday's leftovers" list anywhere.
+// rolls forward to today's date and stays in Today — nothing marked "today"
+// and left unfinished ever silently drops out of the list on its own.
 export function reconcileToday(tasks, todayDateKey) {
-  const reverted = [];
+  const rolled = [];
   const next = tasks.map((t) => {
     if (t.status === "today" && t.todayDate !== todayDateKey) {
-      reverted.push(t.id);
-      return { ...t, status: "someday", todayDate: null, updatedAt: new Date().toISOString() };
+      rolled.push(t.id);
+      return { ...t, todayDate: todayDateKey, updatedAt: new Date().toISOString() };
     }
     return t;
   });
-  return { tasks: next, reverted };
+  return { tasks: next, rolled };
 }
 
 // "Today candidates" — Someday items whose scheduledFor is today. Never
@@ -125,15 +124,9 @@ export function doneTasksByDate(tasks) {
   return [...groups.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1));
 }
 
+// No upper bound: every Today-status task for the day is shown.
 export function todaySlotTasks(tasks, todayDateKey) {
-  return tasks.filter((t) => t.status === "today" && t.todayDate === todayDateKey).slice(0, TODAY_SLOTS);
-}
-
-// Two devices can each fill an available slot before either sees the other's
-// edit. Never hide or silently demote the merged extras: the UI exposes them in
-// a review list so the person can decide what moves back to Someday.
-export function todayOverflowTasks(tasks, todayDateKey) {
-  return tasks.filter((t) => t.status === "today" && t.todayDate === todayDateKey).slice(TODAY_SLOTS);
+  return tasks.filter((t) => t.status === "today" && t.todayDate === todayDateKey);
 }
 
 // ---------- activity inference (for the local ledger and Journal) ----------

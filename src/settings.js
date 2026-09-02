@@ -267,7 +267,7 @@ function buildJournalSection(sec, syncSection) {
     }
     const result = await journal.toggleJournal(enabling, preferredName);
     if (!result.ok) {
-      toast(result.reason === "token" ? "Save an access token first" : "Set a device name first");
+      toast(result.reason === "token" ? "Save an access token first" : result.reason === "status" ? "Could not reach Daybook — check your connection and try again" : "Set a device name first");
       refresh();
       return;
     }

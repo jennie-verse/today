@@ -17,14 +17,14 @@ const sync = await import('../src/sync.js');
 
 // ---------- model.js ----------
 
-test('normalizeTask clamps title, defaults status, and caps subtasks at 5', () => {
+test('normalizeTask clamps title, defaults status, and allows unlimited subtasks', () => {
   const task = model.normalizeTask({
     title: `  ${'x'.repeat(200)}  `,
     subtasks: Array.from({ length: 7 }, (_, i) => ({ title: `s${i}` })),
   });
   assert.equal(task.title.length, model.LIMITS.title);
   assert.equal(task.status, 'someday');
-  assert.equal(task.subtasks.length, model.MAX_SUBTASKS);
+  assert.equal(task.subtasks.length, 7);
   assert.throws(() => model.normalizeTask({ title: '   ' }));
   assert.throws(() => model.normalizeSubtask({ title: '' }));
 });
@@ -40,7 +40,7 @@ test('todayDate/doneAt/doneDate are only set for the matching status', () => {
   assert.ok(done.doneAt);
 });
 
-test('the 3-slot rule only counts today-status tasks for the given day', () => {
+test('countTodaySlots only counts today-status tasks for the given day', () => {
   const tasks = [
     model.normalizeTask({ title: 'a', status: 'today', todayDate: '2026-08-26' }),
     model.normalizeTask({ title: 'b', status: 'today', todayDate: '2026-08-26' }),
@@ -50,36 +50,34 @@ test('the 3-slot rule only counts today-status tasks for the given day', () => {
   assert.equal(model.countTodaySlots(tasks, '2026-08-26'), 2);
   assert.equal(model.canPromoteToToday(tasks, '2026-08-26'), true);
   const full = [...tasks, model.normalizeTask({ title: 'e', status: 'today', todayDate: '2026-08-26' })];
-  assert.equal(model.canPromoteToToday(full, '2026-08-26'), false);
+  assert.equal(model.canPromoteToToday(full, '2026-08-26'), true, 'Today has no upper bound');
 });
 
-test('a concurrent-device overflow keeps three visible slots and exposes every extra for review', () => {
+test('Today has no upper bound: every today-status task for the day is returned, in order', () => {
   const tasks = Array.from({ length: 5 }, (_, index) => model.normalizeTask({
     title: `device task ${index + 1}`, status: 'today', todayDate: '2026-08-26',
   }));
   assert.deepEqual(model.todaySlotTasks(tasks, '2026-08-26').map((task) => task.title), [
-    'device task 1', 'device task 2', 'device task 3',
-  ]);
-  assert.deepEqual(model.todayOverflowTasks(tasks, '2026-08-26').map((task) => task.title), [
-    'device task 4', 'device task 5',
+    'device task 1', 'device task 2', 'device task 3', 'device task 4', 'device task 5',
   ]);
   assert.equal(model.countTodaySlots(tasks, '2026-08-26'), 5);
-  assert.equal(model.canPromoteToToday(tasks, '2026-08-26'), false);
+  assert.equal(model.canPromoteToToday(tasks, '2026-08-26'), true);
 });
 
-test('reconcileToday silently reverts yesterday leftovers to Someday and nothing else', () => {
+test('reconcileToday rolls yesterday leftovers forward into today and leaves everything else alone', () => {
   const tasks = [
     model.normalizeTask({ title: 'stale', status: 'today', todayDate: '2026-08-25' }),
     model.normalizeTask({ title: 'fresh', status: 'today', todayDate: '2026-08-26' }),
     model.normalizeTask({ title: 'backlog', status: 'someday' }),
   ];
-  const { tasks: next, reverted } = model.reconcileToday(tasks, '2026-08-26');
-  assert.equal(reverted.length, 1);
+  const { tasks: next, rolled } = model.reconcileToday(tasks, '2026-08-26');
+  assert.equal(rolled.length, 1);
   const stale = next.find((t) => t.title === 'stale');
-  assert.equal(stale.status, 'someday');
-  assert.equal(stale.todayDate, null);
+  assert.equal(stale.status, 'today');
+  assert.equal(stale.todayDate, '2026-08-26');
   const fresh = next.find((t) => t.title === 'fresh');
   assert.equal(fresh.status, 'today');
+  assert.equal(fresh.todayDate, '2026-08-26');
 });
 
 test('today candidates are Someday tasks scheduled for today, and are never Today tasks', () => {
