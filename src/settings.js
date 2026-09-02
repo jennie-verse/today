@@ -85,6 +85,7 @@ function buildSyncSection(sec) {
   enableSwitch.type = "button";
   enableSwitch.className = "switch";
   enableSwitch.setAttribute("role", "switch");
+  enableSwitch.setAttribute("aria-label", "Sync this device");
   enableRow.append(enableLbl, enableSwitch);
   sec.appendChild(enableRow);
 
@@ -186,6 +187,7 @@ function buildJournalSection(sec, syncSection) {
   enableSwitch.type = "button";
   enableSwitch.className = "switch";
   enableSwitch.setAttribute("role", "switch");
+  enableSwitch.setAttribute("aria-label", "Include in journal");
   enableRow.append(enableLabel, enableSwitch);
   sec.appendChild(enableRow);
 
@@ -198,6 +200,7 @@ function buildJournalSection(sec, syncSection) {
   contentSwitch.type = "button";
   contentSwitch.className = "switch";
   contentSwitch.setAttribute("role", "switch");
+  contentSwitch.setAttribute("aria-label", "Upload titles to private Journal");
   contentRow.append(contentLabel, contentSwitch);
   sec.appendChild(contentRow);
 
@@ -210,6 +213,7 @@ function buildJournalSection(sec, syncSection) {
   subtaskSwitch.type = "button";
   subtaskSwitch.className = "switch";
   subtaskSwitch.setAttribute("role", "switch");
+  subtaskSwitch.setAttribute("aria-label", "Include subtask text");
   subtaskRow.append(subtaskLabel, subtaskSwitch);
   sec.appendChild(subtaskRow);
   const subtaskHint = document.createElement("p");
@@ -394,6 +398,7 @@ export function openSettingsSheet({ onChanged }) {
     settings = store.resetSettings();
     closeSheet();
     onChanged(settings);
+    toast("Everything reset");
   });
   resetRow.append(resetLbl, resetBtn);
   dangerSec.appendChild(resetRow);

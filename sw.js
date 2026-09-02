@@ -1,5 +1,5 @@
 // Keep VERSION in step with APP_BUILD in ./src/version.js.
-const VERSION = "2026.09.01-journal-session1";
+const VERSION = "2026.09.02-a11y1";
 const CACHE_NAME = `today-${VERSION}`;
 
 const APP_SHELL = [
