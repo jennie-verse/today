@@ -359,7 +359,10 @@ export function openSettingsSheet({ onChanged }) {
   resetFontRow.append(rfLbl, rfBtn);
   displaySec.appendChild(resetFontRow);
 
-  const backupSec = section("Backup");
+  const syncSection = buildSyncSection(section("Sync"));
+  const detachJournal = buildJournalSection(section("Journal"), syncSection);
+
+  const backupSec = section("Data");
   const lastBackupP = document.createElement("p");
   lastBackupP.className = "hint";
   const days = daysSinceBackup(settings.lastBackupAt);
@@ -382,10 +385,13 @@ export function openSettingsSheet({ onChanged }) {
   backupRow.append(exportBtn, importBtn);
   backupSec.appendChild(backupRow);
 
-  const syncSection = buildSyncSection(section("Sync"));
-  const detachJournal = buildJournalSection(section("Journal"), syncSection);
+  const aboutSec = section("About");
+  const buildP = document.createElement("p");
+  buildP.className = "hint";
+  buildP.textContent = `App version ${APP_BUILD}`;
+  aboutSec.appendChild(buildP);
 
-  const dangerSec = section("Data");
+  const dangerSec = section("Danger Zone");
   const resetRow = document.createElement("div");
   resetRow.className = "settings-row";
   const resetLbl = document.createElement("div"); resetLbl.className = "lbl"; resetLbl.textContent = "Reset everything";
@@ -402,12 +408,6 @@ export function openSettingsSheet({ onChanged }) {
   });
   resetRow.append(resetLbl, resetBtn);
   dangerSec.appendChild(resetRow);
-
-  const aboutSec = section("About");
-  const buildP = document.createElement("p");
-  buildP.className = "hint";
-  buildP.textContent = `App version ${APP_BUILD}`;
-  aboutSec.appendChild(buildP);
 
   sheet.append(header, body);
   frame.appendChild(sheet);
