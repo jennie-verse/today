@@ -102,6 +102,22 @@ async function deferTask(task) {
   await refresh();
 }
 
+async function deferAllOverflow() {
+  const overflow = todayOverflowTasks(state.tasks, todayKey());
+  if (!overflow.length) return;
+  const ok = await confirmDialog({
+    title: "Move all to Someday?",
+    message: `${overflow.length} task${overflow.length === 1 ? "" : "s"} will move from Today to Someday.`,
+    confirmLabel: "Move all",
+  });
+  if (!ok) return;
+  for (const task of overflow) {
+    await store.putTask(normalizeTask({ ...task, status: "someday", todayDate: null }));
+  }
+  toast(overflow.length === 1 ? "Moved to Someday" : `Moved ${overflow.length} tasks to Someday`);
+  await refresh();
+}
+
 async function deleteTask(task) {
   const ok = await confirmDialog({
     title: "Delete task?",
@@ -385,6 +401,7 @@ async function boot() {
   $("open-settings").addEventListener("click", () => {
     openSettingsSheet({ onChanged: (settings) => { state.settings = settings; applyFont(); } });
   });
+  $("overflow-move-all").addEventListener("click", deferAllOverflow);
 
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("./sw.js").catch(() => { /* offline install still works via cache-on-fetch */ });
