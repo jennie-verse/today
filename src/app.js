@@ -395,9 +395,10 @@ function openSubtaskEditor(task) {
   $("sheet-host").appendChild(overlay);
 }
 
-// Move up/down (from the row's ⋯ menu) only reorders within the same tier —
-// swap `order` with the adjacent same-tier neighbor in `tierList` (already
-// sorted by sortTodayTiers). No-op at either end of the tier.
+// Move up/down (from the row's ⋯ menu) swaps `order` with the adjacent
+// neighbor in `tierList` — the caller passes whatever already-sorted list
+// `task` belongs to: a Today tier (from sortTodayTiers) or the current
+// Someday list (from somedayFiltered). No-op at either end of that list.
 async function moveTask(task, direction, tierList) {
   const idx = tierList.findIndex((t) => t.id === task.id);
   const targetIdx = idx + direction;
