@@ -148,6 +148,33 @@ a { color: inherit; }
 }
 .task-row .actions button:active { background: var(--accent-tint); }
 
+/* ---------- Row kind markers (Note dash / Event time badge) ---------- */
+.task-row .kind-mark {
+  width: 26px; min-width: 44px; min-height: 44px; margin: -9px -9px -9px 0;
+  display: flex; align-items: center; justify-content: center; flex: 0 0 44px;
+  color: var(--text-3); font-size: calc(var(--f) * 1.05); font-weight: 700;
+}
+.task-row.type-event .kind-mark.time-badge {
+  font-size: calc(var(--f) * 0.82); font-weight: 700; color: var(--on-accent);
+  background: var(--accent-tint); border-radius: 8px; width: auto; min-width: 44px;
+  padding: 0 6px; height: 26px;
+}
+
+/* ---------- Today 3-tier divider (plan §3-2) ---------- */
+.tier-divider { height: 1px; background: var(--line); margin: 4px 6px; }
+
+/* ---------- Row "⋯" menu (plan §3-6) ---------- */
+.menu-list { display: flex; flex-direction: column; gap: 2px; }
+.menu-item {
+  width: 100%; min-height: 44px; text-align: left; padding: 0 6px; border-radius: 8px;
+  border: 0; background: none; color: var(--text); font: inherit; font-size: calc(var(--f) * 1);
+  cursor: pointer;
+}
+.menu-item:active { background: var(--accent-tint); }
+.menu-item.danger { color: var(--coral); }
+
+.done-note { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 8px; }
+
 .subtasks { margin: 6px 0 0 32px; display: flex; flex-direction: column; gap: 4px; }
 .subtask-row { display: flex; align-items: center; gap: 6px; }
 .subtask-row .check {
@@ -267,3 +294,5 @@ input[type="text"], input[type="password"], input[type="date"], input[type="time
 
 /* ---------- Empty state ---------- */
 .start-hint { text-align: center; color: var(--text-3); font-size: calc(var(--f) * 0.95); padding: 24px 12px; }
+
+.task-row.type-note .title { color: var(--text-2); }

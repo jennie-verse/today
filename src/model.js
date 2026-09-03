@@ -4,7 +4,19 @@
 export const LIMITS = {
   title: 140,
   subtaskTitle: 100,
+  note: 2000,
 };
+
+// ---------- row kind (brain-dump stage 1) ----------
+// A row's `type` is independent of its `status` lifecycle below.
+//   'task'  — checkbox, default when missing (keeps old records reading correctly)
+//   'note'  — dash marker, no checkbox; sent to Done via the row menu's Archive action
+//   'event' — time badge; auto-promoted to Today when scheduledFor is today
+export const TYPES = new Set(["task", "note", "event"]);
+
+export function taskType(task) {
+  return TYPES.has(task?.type) ? task.type : "task";
+}
 
 export const FONT_STEPS = [6, 8, 10, 12, 14, 17];
 export const DEFAULT_SETTINGS = {
@@ -50,7 +62,11 @@ export function normalizeSubtask(draft) {
 }
 
 export function normalizeTask(draft) {
-  const title = clampText(draft.title, LIMITS.title);
+  const type = TYPES.has(draft.type) ? draft.type : "task";
+  // Note content preserves internal line breaks (clampText only trims the
+  // ends) and gets the longer LIMITS.note ceiling; task/event titles keep
+  // the existing LIMITS.title ceiling.
+  const title = clampText(draft.title, type === "note" ? LIMITS.note : LIMITS.title);
   if (!title) throw { field: "title", message: "Title is required." };
   const status = STATUSES.has(draft.status) ? draft.status : "someday";
   const subtasks = Array.isArray(draft.subtasks)
@@ -59,7 +75,9 @@ export function normalizeTask(draft) {
   return {
     id: draft.id || makeId(),
     title,
+    type,
     status,
+    order: Number.isFinite(draft.order) ? draft.order : null,
     todayDate: status === "today" ? (draft.todayDate || null) : null,
     scheduledFor: draft.scheduledFor || null,
     scheduledAtMinutes: Number.isFinite(draft.scheduledAtMinutes) ? draft.scheduledAtMinutes : null,
@@ -127,6 +145,111 @@ export function doneTasksByDate(tasks) {
 // No upper bound: every Today-status task for the day is shown.
 export function todaySlotTasks(tasks, todayDateKey) {
   return tasks.filter((t) => t.status === "today" && t.todayDate === todayDateKey);
+}
+
+// Next `order` value for a status bucket — appended to the end of that
+// bucket's current ordering. Used whenever a task is created or moves into a
+// different status bucket (Someday/Today/Done each keep their own sequence).
+export function nextOrder(tasks, status) {
+  const max = tasks.reduce((m, t) => (
+    t.status === status && Number.isFinite(t.order) ? Math.max(m, t.order) : m
+  ), -1);
+  return max + 1;
+}
+
+// ---------- type/order migration (boot-time, one-time, additive) ----------
+//
+// Records saved before `type`/`order` existed have neither field. Assign
+// `order` by ascending createdAt, numbered separately per status bucket
+// (today/someday/done) so existing on-screen ordering is preserved. `type`
+// already defaults to "task" via normalizeTask, so nothing to backfill there.
+// Returns only the records that actually needed a write.
+export function migrateOrder(tasks) {
+  const changed = [];
+  for (const status of STATUSES) {
+    const bucket = tasks
+      .filter((t) => t.status === status && !Number.isFinite(t.order))
+      .sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
+    const base = tasks.reduce((max, t) => (
+      t.status === status && Number.isFinite(t.order) ? Math.max(max, t.order) : max
+    ), -1);
+    bucket.forEach((t, i) => changed.push({ ...t, order: base + 1 + i, updatedAt: t.updatedAt || new Date().toISOString() }));
+  }
+  return changed;
+}
+
+// ---------- Today 3-tier sort (plan §3-2) ----------
+//
+// Event (ascending scheduledAtMinutes, no value sorts last) -> Task (ascending
+// order) -> Note (ascending order). Returns rows tagged with a `tier` index
+// (0/1/2) so the UI can draw a subtle divider between tiers.
+export function todayTierGroups(tasks) {
+  const events = tasks.filter((t) => taskType(t) === "event")
+    .sort((a, b) => {
+      const av = Number.isFinite(a.scheduledAtMinutes) ? a.scheduledAtMinutes : Infinity;
+      const bv = Number.isFinite(b.scheduledAtMinutes) ? b.scheduledAtMinutes : Infinity;
+      return av - bv;
+    });
+  const byOrder = (a, b) => (a.order ?? 0) - (b.order ?? 0);
+  const notes = tasks.filter((t) => taskType(t) === "note").sort(byOrder);
+  const plainTasks = tasks.filter((t) => taskType(t) === "task").sort(byOrder);
+  return { events, tasks: plainTasks, notes };
+}
+
+export function sortTodayTiers(tasks) {
+  const { events, tasks: plainTasks, notes } = todayTierGroups(tasks);
+  return [
+    ...events.map((t) => ({ task: t, tier: 0 })),
+    ...plainTasks.map((t) => ({ task: t, tier: 1 })),
+    ...notes.map((t) => ({ task: t, tier: 2 })),
+  ];
+}
+
+// Move a task up/down within its own Today tier only (plan §3-2: "위로/아래로
+// 이동은 같은 덩어리 안에서만"). `tierTasks` must already be the sorted tier
+// list (events, plain tasks, or notes) containing `task`. Returns the pair of
+// tasks whose `order` needs to swap, or [] if the move isn't possible (task
+// missing from the list, or already at that edge) — events aren't order-
+// sorted so moving them is a no-op by returning [].
+export function moveWithinTier(tierTasks, taskId, direction) {
+  const idx = tierTasks.findIndex((t) => t.id === taskId);
+  if (idx === -1) return [];
+  const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+  if (swapIdx < 0 || swapIdx >= tierTasks.length) return [];
+  const a = tierTasks[idx];
+  const b = tierTasks[swapIdx];
+  const aOrder = Number.isFinite(a.order) ? a.order : 0;
+  const bOrder = Number.isFinite(b.order) ? b.order : 0;
+  return [{ ...a, order: bOrder }, { ...b, order: aOrder }];
+}
+
+// Event auto-promotion only (plan §3-3, §1.2): a "someday" event whose
+// scheduledFor is today moves to the top of Today. Tasks and notes are never
+// auto-promoted. Returns { tasks, promoted } like reconcileToday.
+export function autoPromoteEvents(tasks, todayDateKey) {
+  const promoted = [];
+  const next = tasks.map((t) => {
+    if (t.type === "event" && t.status === "someday" && t.scheduledFor === todayDateKey) {
+      promoted.push(t.id);
+      return { ...t, status: "today", todayDate: todayDateKey, updatedAt: new Date().toISOString() };
+    }
+    return t;
+  });
+  return { tasks: next, promoted };
+}
+
+// ---------- Done, scoped to today (plan §8 stage 1 #5) ----------
+
+export function todayDoneTasks(tasks, todayDateKey) {
+  return tasks
+    .filter((t) => t.status === "done" && t.doneDate === todayDateKey)
+    .sort((a, b) => (a.doneAt || "").localeCompare(b.doneAt || ""));
+}
+
+// Done records left over from a previous day — deleted locally on boot after
+// the journal hook has already sent them (see app.js cleanupOldDone).
+export function staleDoneTasks(tasks, todayDateKey) {
+  return tasks.filter((t) => t.status === "done" && t.doneDate !== todayDateKey);
 }
 
 // ---------- activity inference (for the local ledger and Journal) ----------

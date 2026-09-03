@@ -115,6 +115,74 @@ test('inferTaskAction covers created/deleted/completed/reopened/promoted/deferre
   assert.equal(model.inferTaskAction(model.normalizeTask({ ...someday, title: 'b' }), someday), 'edited');
 });
 
+// ---------- type/order (plan §8 stage 1) ----------
+
+test('normalizeTask defaults type to "task" and reads an existing record without type/order correctly', () => {
+  const t = model.normalizeTask({ title: 'legacy', status: 'today', todayDate: '2026-08-26' });
+  assert.equal(t.type, 'task');
+  assert.equal(t.order, null);
+});
+
+test('migrateOrder assigns order by ascending createdAt, numbered separately per status bucket', () => {
+  const tasks = [
+    { ...model.normalizeTask({ title: 'a', status: 'today', todayDate: '2026-08-26' }), createdAt: '2026-08-01T00:00:00.000Z' },
+    { ...model.normalizeTask({ title: 'b', status: 'today', todayDate: '2026-08-26' }), createdAt: '2026-08-02T00:00:00.000Z' },
+    { ...model.normalizeTask({ title: 'c', status: 'someday' }), createdAt: '2026-08-01T00:00:00.000Z' },
+  ];
+  const changed = model.migrateOrder(tasks);
+  assert.equal(changed.length, 3);
+  const a = changed.find((t) => t.title === 'a');
+  const b = changed.find((t) => t.title === 'b');
+  const c = changed.find((t) => t.title === 'c');
+  assert.ok(a.order < b.order, 'today bucket ordered by createdAt');
+  assert.equal(c.order, 0, 'someday bucket numbered separately, starting at 0');
+});
+
+test('migrateOrder is a no-op for records that already have an order', () => {
+  const tasks = [model.normalizeTask({ title: 'a', status: 'someday', order: 5 })];
+  assert.deepEqual(model.migrateOrder(tasks), []);
+});
+
+test('sortTodayTiers puts events first (by scheduledAtMinutes, no-value last), then tasks, then notes, each by order', () => {
+  const tasks = [
+    model.normalizeTask({ title: 'note1', type: 'note', status: 'today', todayDate: '2026-08-26', order: 1 }),
+    model.normalizeTask({ title: 'task1', type: 'task', status: 'today', todayDate: '2026-08-26', order: 1 }),
+    model.normalizeTask({ title: 'event-no-time', type: 'event', status: 'today', todayDate: '2026-08-26' }),
+    model.normalizeTask({ title: 'task0', type: 'task', status: 'today', todayDate: '2026-08-26', order: 0 }),
+    model.normalizeTask({ title: 'event-9am', type: 'event', status: 'today', todayDate: '2026-08-26', scheduledAtMinutes: 540 }),
+  ];
+  const sorted = model.sortTodayTiers(tasks).map((r) => r.task.title);
+  assert.deepEqual(sorted, ['event-9am', 'event-no-time', 'task0', 'task1', 'note1']);
+});
+
+test('autoPromoteEvents only promotes Someday events scheduled for today, never tasks or notes', () => {
+  const key = '2026-08-26';
+  const tasks = [
+    model.normalizeTask({ title: 'evt', type: 'event', status: 'someday', scheduledFor: key }),
+    model.normalizeTask({ title: 'task', type: 'task', status: 'someday', scheduledFor: key }),
+    model.normalizeTask({ title: 'note', type: 'note', status: 'someday', scheduledFor: key }),
+  ];
+  const { tasks: next, promoted } = model.autoPromoteEvents(tasks, key);
+  assert.equal(promoted.length, 1);
+  const evt = next.find((t) => t.title === 'evt');
+  assert.equal(evt.status, 'today');
+  assert.equal(evt.todayDate, key);
+  assert.equal(next.find((t) => t.title === 'task').status, 'someday');
+  assert.equal(next.find((t) => t.title === 'note').status, 'someday');
+});
+
+test('todayDoneTasks only returns items done today, sorted by doneAt ascending; staleDoneTasks returns the rest', () => {
+  const tasks = [
+    model.normalizeTask({ title: 'old', status: 'done', doneDate: '2026-08-20', doneAt: '2026-08-20T09:00:00.000Z' }),
+    model.normalizeTask({ title: 'today-late', status: 'done', doneDate: model.todayKey(), doneAt: '2026-08-26T15:00:00.000Z' }),
+    model.normalizeTask({ title: 'today-early', status: 'done', doneDate: model.todayKey(), doneAt: '2026-08-26T09:00:00.000Z' }),
+  ];
+  const todaysDone = model.todayDoneTasks(tasks, model.todayKey());
+  assert.deepEqual(todaysDone.map((t) => t.title), ['today-early', 'today-late']);
+  const stale = model.staleDoneTasks(tasks, model.todayKey());
+  assert.deepEqual(stale.map((t) => t.title), ['old']);
+});
+
 // ---------- nlp-date.js ----------
 // A fixed Wednesday so weekday math is deterministic across the suite.
 const WED = new Date(2026, 7, 26, 10, 0, 0);

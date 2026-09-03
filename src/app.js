@@ -1,7 +1,9 @@
 import {
   DEFAULT_SETTINGS,
-  normalizeTask, subtaskProgress, todayKey,
-  reconcileToday, todayCandidates, somedayTasks, doneTasksByDate, todaySlotTasks,
+  normalizeTask, subtaskProgress, todayKey, taskType,
+  reconcileToday, todayCandidates, somedayTasks, todaySlotTasks,
+  migrateOrder, sortTodayTiers, autoPromoteEvents, todayDoneTasks, staleDoneTasks,
+  nextOrder,
 } from "./model.js";
 import { parseNaturalLanguage } from "./nlp-date.js";
 import * as store from "./store.js";
@@ -24,16 +26,58 @@ async function loadTasks() {
 
 async function reconcile() {
   const { tasks, rolled } = reconcileToday(state.tasks, todayKey());
-  if (!rolled.length) return;
-  const toWrite = tasks.filter((t) => rolled.includes(t.id));
-  await store.bulkPutTasks(toWrite);
-  state.tasks = tasks;
-  journal.recordRollover(toWrite).catch(() => {});
+  if (!rolled.length) { state.tasks = tasks; }
+  else {
+    const toWrite = tasks.filter((t) => rolled.includes(t.id));
+    await store.bulkPutTasks(toWrite);
+    state.tasks = tasks;
+    journal.recordRollover(toWrite).catch(() => {});
+  }
+
+  // Event auto-promotion only (plan §3-3): a Someday event scheduled for
+  // today moves to the top of Today. Tasks/notes are never auto-promoted.
+  const { tasks: afterPromote, promoted } = autoPromoteEvents(state.tasks, todayKey());
+  if (promoted.length) {
+    const toWrite = afterPromote.filter((t) => promoted.includes(t.id));
+    await store.bulkPutTasks(toWrite);
+    state.tasks = afterPromote;
+  }
+}
+
+// One-time additive migration: records saved before `type`/`order` existed
+// get an `order` assigned by ascending createdAt, numbered separately per
+// status bucket. Does not touch the IndexedDB schema version — same store,
+// same keyPath, just filling in a field that used to be absent.
+async function migrate() {
+  const changed = migrateOrder(state.tasks);
+  if (!changed.length) return;
+  await store.bulkPutTasks(changed);
+  const byId = new Map(changed.map((t) => [t.id, t]));
+  state.tasks = state.tasks.map((t) => byId.get(t.id) || t);
+}
+
+// Done records from a previous day are deleted locally on boot, but only
+// after the journal hook already sent them — which it did the moment each
+// task was marked done (store.putTask -> notifyTaskChange -> journal.js).
+// The delete itself runs through withoutTaskHook so it does NOT re-notify
+// journal.js: that would enqueue a tombstone and erase the record from
+// Daybook, which is the opposite of what "old items live on in Daybook"
+// means. This only ever touches Published/today's own IndexedDB.
+async function cleanupOldDone() {
+  const stale = staleDoneTasks(state.tasks, todayKey());
+  if (!stale.length) return;
+  const staleIds = new Set(stale.map((t) => t.id));
+  await store.withoutTaskHook(async () => {
+    for (const t of stale) await store.deleteTaskById(t.id);
+  });
+  state.tasks = state.tasks.filter((t) => !staleIds.has(t.id));
 }
 
 async function refresh() {
   await loadTasks();
+  await migrate();
   await reconcile();
+  await cleanupOldDone();
   render();
 }
 
@@ -74,9 +118,11 @@ function actionButton(label, glyph, onClick) {
 
 async function completeTask(task) {
   const done = task.status !== "done";
+  const destStatus = done ? "done" : "someday";
   const next = normalizeTask({
     ...task,
-    status: done ? "done" : "someday",
+    status: destStatus,
+    order: nextOrder(state.tasks, destStatus),
     doneAt: done ? new Date().toISOString() : null,
     doneDate: done ? todayKey() : null,
   });
@@ -86,14 +132,14 @@ async function completeTask(task) {
 }
 
 async function promoteTask(task) {
-  const next = normalizeTask({ ...task, status: "today", todayDate: todayKey() });
+  const next = normalizeTask({ ...task, status: "today", order: nextOrder(state.tasks, "today"), todayDate: todayKey() });
   await store.putTask(next);
   toast(`Moved to Today`);
   await refresh();
 }
 
 async function deferTask(task) {
-  const next = normalizeTask({ ...task, status: "someday", todayDate: null });
+  const next = normalizeTask({ ...task, status: "someday", order: nextOrder(state.tasks, "someday"), todayDate: null });
   await store.putTask(next);
   toast(`Moved to Someday`);
   await refresh();
@@ -155,9 +201,14 @@ function openTaskEditor(task) {
     if (!raw.trim()) { toast("Title is required."); return; }
     const parsed = parseNaturalLanguage(raw, { now: new Date() });
     try {
+      // Stage 1 has no kind-switching UI yet: a Note keeps being a Note, but
+      // a Task/Event's kind still tracks whether the edited text carries a
+      // time, same rule as creation (plan §2).
+      const type = task.type === "note" ? "note" : (Number.isFinite(parsed.scheduledAtMinutes) ? "event" : "task");
       const next = normalizeTask({
         ...task,
         title: parsed.title,
+        type,
         scheduledFor: parsed.scheduledFor,
         scheduledAtMinutes: parsed.scheduledAtMinutes,
       });
@@ -320,35 +371,125 @@ function openSubtaskEditor(task) {
   $("sheet-host").appendChild(overlay);
 }
 
-function taskRow(task, { context }) {
+// Move up/down (from the row's ⋯ menu) only reorders within the same tier —
+// swap `order` with the adjacent same-tier neighbor in `tierList` (already
+// sorted by sortTodayTiers). No-op at either end of the tier.
+async function moveTask(task, direction, tierList) {
+  const idx = tierList.findIndex((t) => t.id === task.id);
+  const targetIdx = idx + direction;
+  if (idx < 0 || targetIdx < 0 || targetIdx >= tierList.length) return;
+  const other = tierList[targetIdx];
+  const a = normalizeTask({ ...task, order: other.order ?? 0 });
+  const b = normalizeTask({ ...other, order: task.order ?? 0 });
+  await store.putTask(a);
+  await store.putTask(b);
+  await refresh();
+}
+
+function menuItemButton(label, onClick, { danger = false } = {}) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "menu-item" + (danger ? " danger" : "");
+  b.textContent = label;
+  b.addEventListener("click", onClick);
+  return b;
+}
+
+// Row "⋯" menu (plan §3-6): consolidates the per-row actions that used to be
+// separate icon buttons, plus the new move up/down actions. Only the items
+// relevant to stage 1's feature set — no Turn-into-tasks, no kind-switching.
+function openRowMenu(task, { context, tierList }) {
+  const overlay = node("div", "overlay");
+  const frame = node("div", "frame");
+  const sheet = node("div", "sheet");
+  sheet.setAttribute("role", "dialog");
+  sheet.setAttribute("aria-modal", "true");
+  const header = node("div", "sheet-hdr");
+  header.append(node("h2", "", task.title), (() => {
+    const b = node("button", "ico", "✕"); b.type = "button"; b.setAttribute("aria-label", "Close"); return b;
+  })());
+  const closeBtn = header.lastChild;
+
+  const body = node("div", "sheet-body menu-list");
+
+  function close() {
+    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    document.removeEventListener("keydown", onKey);
+  }
+  function onKey(e) { if (e.key === "Escape") close(); }
+  function act(fn) { return () => { close(); fn(); }; }
+
+  const kind = taskType(task);
+  body.appendChild(menuItemButton("Edit", act(() => openTaskEditor(task))));
+  if (context !== "done" && kind !== "note") {
+    body.appendChild(menuItemButton("Edit subtasks", act(() => openSubtaskEditor(task))));
+  }
+  if (context === "today") {
+    body.appendChild(menuItemButton("Move up", act(() => moveTask(task, -1, tierList))));
+    body.appendChild(menuItemButton("Move down", act(() => moveTask(task, 1, tierList))));
+    body.appendChild(menuItemButton("Move to Someday", act(() => deferTask(task))));
+  } else if (context === "someday") {
+    body.appendChild(menuItemButton("Move to Today", act(() => promoteTask(task))));
+  } else if (context === "done") {
+    body.appendChild(menuItemButton("Reopen", act(() => completeTask(task))));
+  }
+  // Note has no checkbox — 정리함(Archive) is its only way into Done, and
+  // reuses the same status/doneAt/doneDate fields as completing a task.
+  if (context !== "done" && kind === "note") {
+    body.appendChild(menuItemButton("Archive to Done", act(() => completeTask(task))));
+  }
+  body.appendChild(menuItemButton("Delete", act(() => deleteTask(task)), { danger: true }));
+
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+  document.addEventListener("keydown", onKey);
+  closeBtn.addEventListener("click", close);
+
+  sheet.append(header, body);
+  frame.appendChild(sheet);
+  overlay.appendChild(frame);
+  $("sheet-host").appendChild(overlay);
+}
+
+function formatClock(minutes) {
+  if (!Number.isFinite(minutes)) return "";
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+// Note has no checkbox (plan §1.3/§3-6) — a plain dash marker instead, kept
+// even after archiving to Done. Event shows a time badge in place of the
+// checkbox when it has a scheduledAtMinutes; otherwise it behaves like a task.
+function taskRow(task, { context, tierList = [] }) {
   const wrap = node("div");
-  const row = node("div", "task-row" + (task.status === "done" ? " done" : ""));
-  const check = node("button", "check");
-  check.type = "button";
-  check.setAttribute("aria-label", task.status === "done" ? `Mark not done: ${task.title}` : `Mark done: ${task.title}`);
-  check.appendChild(node("span", "dot"));
-  check.addEventListener("click", () => completeTask(task));
+  const kind = taskType(task);
+  const row = node("div", "task-row" + (task.status === "done" ? " done" : "") + ` type-${kind}`);
+
+  if (kind === "note") {
+    row.appendChild(node("span", "kind-mark", "—"));
+  } else if (kind === "event" && Number.isFinite(task.scheduledAtMinutes)) {
+    const badge = node("span", "kind-mark time-badge", formatClock(task.scheduledAtMinutes));
+    badge.setAttribute("aria-label", `Scheduled ${formatClock(task.scheduledAtMinutes)}`);
+    row.appendChild(badge);
+  } else {
+    const check = node("button", "check");
+    check.type = "button";
+    check.setAttribute("aria-label", task.status === "done" ? `Mark not done: ${task.title}` : `Mark done: ${task.title}`);
+    check.appendChild(node("span", "dot"));
+    check.addEventListener("click", () => completeTask(task));
+    row.appendChild(check);
+  }
 
   const main = node("div", "main");
   main.appendChild(node("div", "title", task.title));
   const progress = subtaskProgress(task);
   if (progress.total) main.appendChild(node("div", "sub-progress", `${progress.done}/${progress.total} subtasks`));
+  row.appendChild(main);
 
   const actions = node("div", "actions");
-  if (context !== "done") {
-    actions.appendChild(actionButton("Edit task", "✏", () => openTaskEditor(task)));
-    actions.appendChild(actionButton("Edit subtasks", "✎", () => openSubtaskEditor(task)));
-  }
-  if (context === "today") {
-    actions.appendChild(actionButton("Move to Someday", "↩", () => deferTask(task)));
-  } else if (context === "someday") {
-    actions.appendChild(actionButton("Move to Today", "→", () => promoteTask(task)));
-  } else if (context === "done") {
-    actions.appendChild(actionButton("Reopen", "↺", () => completeTask(task)));
-  }
-  actions.appendChild(actionButton("Delete", "🗑", () => deleteTask(task)));
+  actions.appendChild(actionButton("More actions", "⋯", () => openRowMenu(task, { context, tierList })));
+  row.appendChild(actions);
 
-  row.append(check, main, actions);
   wrap.appendChild(row);
 
   if (progress.total) {
@@ -372,9 +513,19 @@ function render() {
   if (!slots.length) {
     slotsHost.appendChild(node("div", "slot empty", "Nothing in Today — add a task or move one from Someday"));
   } else {
-    slots.forEach((task) => {
+    // 3-tier sort (plan §3-2): Event -> Task -> Note, with a subtle divider
+    // drawn between tiers. Move up/down only reorders within the tierList
+    // the row belongs to.
+    const tiered = sortTodayTiers(slots);
+    let lastTier = null;
+    tiered.forEach(({ task, tier }) => {
+      if (lastTier !== null && tier !== lastTier) {
+        slotsHost.appendChild(node("div", "tier-divider"));
+      }
+      lastTier = tier;
+      const tierList = tiered.filter((r) => r.tier === tier).map((r) => r.task);
       const box = node("div", "slot");
-      box.appendChild(taskRow(task, { context: "today" }));
+      box.appendChild(taskRow(task, { context: "today", tierList }));
       slotsHost.appendChild(box);
     });
   }
@@ -405,17 +556,19 @@ function render() {
     somedayHost.appendChild(box);
   });
 
-  const doneGroups = doneTasksByDate(state.tasks);
-  $("done-count").textContent = `(${doneGroups.reduce((sum, [, list]) => sum + list.length, 0)})`;
+  // Done is scoped to today only (plan §8 stage 1 #5) — items done on a
+  // previous day are cleaned up on boot (see cleanupOldDone) and live on in
+  // Daybook instead.
+  const doneToday = todayDoneTasks(state.tasks, key);
+  $("done-count").textContent = `(${doneToday.length})`;
   const doneHost = $("done-list");
   doneHost.replaceChildren();
-  if (!doneGroups.length) doneHost.appendChild(node("p", "empty-hint", "Nothing done yet."));
-  doneGroups.forEach(([date, tasks]) => {
-    const group = node("div", "done-date-group");
-    group.appendChild(node("h3", "", date));
-    tasks.forEach((task) => group.appendChild(taskRow(task, { context: "done" })));
-    doneHost.appendChild(group);
-  });
+  if (!doneToday.length) {
+    doneHost.appendChild(node("p", "empty-hint", "Nothing done yet."));
+  } else {
+    doneToday.forEach((task) => doneHost.appendChild(taskRow(task, { context: "done" })));
+  }
+  doneHost.appendChild(node("p", "empty-hint done-note", "Older Done items are no longer kept here — see Daybook."));
 }
 
 // ---------- add bar ----------
@@ -434,9 +587,14 @@ function wireAddBar() {
     if (!raw.trim()) return;
     const parsed = parseNaturalLanguage(raw, { now: new Date() });
     try {
+      // Stage 1 has no add-bar kind chips yet (that's stage 2): a parsed
+      // time makes it an Event (plan §2), otherwise it's a plain Task.
+      const type = Number.isFinite(parsed.scheduledAtMinutes) ? "event" : "task";
       const task = normalizeTask({
         title: parsed.title,
+        type,
         status: "someday",
+        order: nextOrder(state.tasks, "someday"),
         scheduledFor: parsed.scheduledFor,
         scheduledAtMinutes: parsed.scheduledAtMinutes,
       });
@@ -466,7 +624,11 @@ function handleUrlIntake() {
   if (!add.trim()) return;
   const parsed = parseNaturalLanguage(add, { now: new Date() });
   const source = params.get("from") === "tide" ? "tide" : "manual";
-  store.putTask(normalizeTask({ title: parsed.title, status: "someday", scheduledFor: parsed.scheduledFor, scheduledAtMinutes: parsed.scheduledAtMinutes, source }))
+  const type = Number.isFinite(parsed.scheduledAtMinutes) ? "event" : "task";
+  store.putTask(normalizeTask({
+    title: parsed.title, type, status: "someday", order: nextOrder(state.tasks, "someday"),
+    scheduledFor: parsed.scheduledFor, scheduledAtMinutes: parsed.scheduledAtMinutes, source,
+  }))
     .then(refresh)
     .then(() => toast(`Added to Someday from ${source === "tide" ? "Tide" : "link"}`));
 }
