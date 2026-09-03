@@ -200,10 +200,12 @@ a { color: inherit; }
 .candidate-row .title { flex: 1; font-size: calc(var(--f) * 0.98); min-width: 0; word-break: break-word; }
 .candidate-actions { display: flex; gap: 6px; flex: 0 0 auto; }
 .candidate-row button {
+  position: relative;
   display: inline-flex; align-items: center; justify-content: center;
-  min-height: 44px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--accent);
+  min-height: 30px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--accent);
   background: var(--card); color: var(--on-accent); font-weight: 700; font-size: calc(var(--f) * 0.9); cursor: pointer;
 }
+.candidate-row button::after { content: ""; position: absolute; inset: -7px -3px; }
 .candidate-row button.ghost {
   border-color: var(--line); color: var(--text-2); font-weight: 400;
 }
@@ -297,17 +299,30 @@ input[type="text"], input[type="password"], input[type="date"], input[type="time
 
 .chiprow { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip {
+  /* A pill with a visible fill can't use the .check-style negative-margin
+     trick — margin repositions the box, it doesn't shrink the painted
+     background/border, so the pill still looked 44px tall either way. The
+     44px touch target (house style floor) instead comes from an invisible
+     ::after that extends the hit area beyond the visibly smaller pill. */
+  position: relative;
   display: inline-flex; align-items: center; justify-content: center;
-  font: inherit; font-size: calc(var(--f) * .95); min-height: 44px; min-width: 44px; padding: 0 14px;
+  font: inherit; font-size: calc(var(--f) * .95); min-height: 30px; min-width: 30px; padding: 6px 14px;
   border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--text); cursor: pointer;
 }
+/* Vertical extension is generous (rows have room above/below); horizontal
+   is kept small since chips sit only 8px apart in a row — a wide inset
+   there would make neighboring chips' hit areas overlap. */
+.chip::after { content: ""; position: absolute; inset: -7px -3px; }
 .chip[aria-pressed="true"] { background: var(--accent-tint); border-color: var(--accent); color: var(--on-accent); font-weight: 700; }
 
 .btn {
+  /* Same visible-pill-vs-hit-area split as .chip above. */
+  position: relative;
   display: inline-flex; align-items: center; justify-content: center;
-  font: inherit; font-size: calc(var(--f) * 1); min-height: 44px; padding: 0 16px; border-radius: 10px;
+  font: inherit; font-size: calc(var(--f) * 1); min-height: 32px; padding: 7px 16px; border-radius: 10px;
   border: 1px solid var(--line); background: var(--card); color: var(--text); cursor: pointer;
 }
+.btn::after { content: ""; position: absolute; inset: -6px -3px; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 700; }
 .btn.ghost { background: none; }
 .btn.danger { color: var(--coral); border-color: var(--coral); }
@@ -323,7 +338,8 @@ input[type="text"], input[type="password"], input[type="date"], input[type="time
   pointer-events: auto; background: var(--text); color: #fff; border-radius: 999px; padding: 8px 14px;
   font-size: calc(var(--f) * .95); display: flex; align-items: center; gap: 10px; max-width: 90vw;
 }
-.toast button { display: inline-flex; align-items: center; justify-content: center; background: none; border: 0; color: var(--accent-tint); font: inherit; font-weight: 700; cursor: pointer; min-height: 44px; padding: 0 4px; }
+.toast button { position: relative; display: inline-flex; align-items: center; justify-content: center; background: none; border: 0; color: var(--accent-tint); font: inherit; font-weight: 700; cursor: pointer; min-height: 30px; padding: 0 4px; }
+.toast button::after { content: ""; position: absolute; inset: -7px; }
 
 /* ---------- Preview (snapshot-style read-only view) ---------- */
 .preview-body { white-space: pre-wrap; word-break: break-word; font-size: calc(var(--f) * 1); padding: 8px 0; }
