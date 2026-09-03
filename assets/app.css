@@ -108,7 +108,7 @@ a { color: inherit; }
 .today-slots { display: flex; flex-direction: column; gap: 8px; }
 .slot {
   background: var(--card); border: 1px solid var(--line); border-radius: 14px;
-  padding: 8px 12px;
+  padding: 6px 12px;
 }
 .slot.empty {
   display: flex; align-items: center; justify-content: center; color: var(--text-3);
@@ -125,7 +125,7 @@ a { color: inherit; }
 
 .task-row { display: flex; align-items: flex-start; gap: 8px; }
 .task-row .check {
-  width: 26px; height: 26px; min-width: 44px; min-height: 44px; margin: -9px -9px -9px 0;
+  width: 26px; height: 26px; min-width: 44px; min-height: 44px; margin: -11px -11px -11px 0;
   display: flex; align-items: center; justify-content: center;
   background: none; border: 0; cursor: pointer; flex: 0 0 44px;
 }
@@ -148,14 +148,14 @@ a { color: inherit; }
      doesn't force every row to be 44px tall regardless of how little text
      is in it — this button was the one place that trick was missing, so a
      single-line row with no subtasks still came out 44px tall. */
-  width: 44px; height: 44px; margin: -9px -9px -9px 0; background: none; border: 0; border-radius: 8px; cursor: pointer;
+  width: 44px; height: 44px; margin: -11px -11px -11px 0; background: none; border: 0; border-radius: 8px; cursor: pointer;
   color: var(--text-2); font-size: calc(var(--f) * 1.1); display: flex; align-items: center; justify-content: center;
 }
 .task-row .actions button:active { background: var(--accent-tint); }
 
 /* ---------- Row kind markers (Note dash / Event time badge) ---------- */
 .task-row .kind-mark {
-  width: 26px; min-width: 44px; min-height: 44px; margin: -9px -9px -9px 0;
+  width: 26px; min-width: 44px; min-height: 44px; margin: -11px -11px -11px 0;
   display: flex; align-items: center; justify-content: center; flex: 0 0 44px;
   color: var(--text-3); font-size: calc(var(--f) * 1.05); font-weight: 700;
 }
@@ -171,6 +171,7 @@ a { color: inherit; }
 /* ---------- Row "⋯" menu (plan §3-6) ---------- */
 .menu-list { display: flex; flex-direction: column; gap: 2px; }
 .menu-item {
+  display: flex; align-items: center;
   width: 100%; min-height: 44px; text-align: left; padding: 0 6px; border-radius: 8px;
   border: 0; background: none; color: var(--text); font: inherit; font-size: calc(var(--f) * 1);
   cursor: pointer;
@@ -199,6 +200,7 @@ a { color: inherit; }
 .candidate-row .title { flex: 1; font-size: calc(var(--f) * 0.98); min-width: 0; word-break: break-word; }
 .candidate-actions { display: flex; gap: 6px; flex: 0 0 auto; }
 .candidate-row button {
+  display: inline-flex; align-items: center; justify-content: center;
   min-height: 44px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--accent);
   background: var(--card); color: var(--on-accent); font-weight: 700; font-size: calc(var(--f) * 0.9); cursor: pointer;
 }
@@ -219,7 +221,7 @@ a { color: inherit; }
 .done-date-group h3 { font-size: calc(var(--f) * 0.92); color: var(--text-2); margin-bottom: 4px; }
 
 .someday-row {
-  background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 6px 10px;
 }
 .someday-row .task-row .actions { gap: 0; }
 
@@ -254,6 +256,7 @@ a { color: inherit; }
   font-size: 16px; background: var(--bg); font: inherit; resize: none; min-height: 66px;
 }
 .add-bar button {
+  display: flex; align-items: center; justify-content: center;
   width: 44px; height: 44px; flex: 0 0 44px; border-radius: 12px; border: 0; background: var(--accent);
   color: var(--on-accent); font-weight: 700; font-size: calc(var(--f) * 1.3); cursor: pointer;
 }
@@ -272,7 +275,10 @@ a { color: inherit; }
 }
 .sheet-hdr { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 8px; }
 .sheet-hdr h2 { font-size: calc(var(--f) * 1.3); font-weight: 700; }
-.sheet-hdr .ico { width: 44px; height: 44px; background: none; border: 0; border-radius: 10px; cursor: pointer; color: var(--text-2); font-size: calc(var(--f) * 1.2); }
+.sheet-hdr .ico {
+  display: flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; background: none; border: 0; border-radius: 10px; cursor: pointer; color: var(--text-2); font-size: calc(var(--f) * 1.2);
+}
 .sheet-body { overflow-y: auto; padding: 4px 16px 20px; flex: 1; min-height: 0; }
 .sheet-foot { display: flex; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--line); }
 
@@ -291,12 +297,14 @@ input[type="text"], input[type="password"], input[type="date"], input[type="time
 
 .chiprow { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip {
+  display: inline-flex; align-items: center; justify-content: center;
   font: inherit; font-size: calc(var(--f) * .95); min-height: 44px; min-width: 44px; padding: 0 14px;
   border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--text); cursor: pointer;
 }
 .chip[aria-pressed="true"] { background: var(--accent-tint); border-color: var(--accent); color: var(--on-accent); font-weight: 700; }
 
 .btn {
+  display: inline-flex; align-items: center; justify-content: center;
   font: inherit; font-size: calc(var(--f) * 1); min-height: 44px; padding: 0 16px; border-radius: 10px;
   border: 1px solid var(--line); background: var(--card); color: var(--text); cursor: pointer;
 }
@@ -315,7 +323,7 @@ input[type="text"], input[type="password"], input[type="date"], input[type="time
   pointer-events: auto; background: var(--text); color: #fff; border-radius: 999px; padding: 8px 14px;
   font-size: calc(var(--f) * .95); display: flex; align-items: center; gap: 10px; max-width: 90vw;
 }
-.toast button { background: none; border: 0; color: var(--accent-tint); font: inherit; font-weight: 700; cursor: pointer; min-height: 44px; padding: 0 4px; }
+.toast button { display: inline-flex; align-items: center; justify-content: center; background: none; border: 0; color: var(--accent-tint); font: inherit; font-weight: 700; cursor: pointer; min-height: 44px; padding: 0 4px; }
 
 /* ---------- Preview (snapshot-style read-only view) ---------- */
 .preview-body { white-space: pre-wrap; word-break: break-word; font-size: calc(var(--f) * 1); padding: 8px 0; }
