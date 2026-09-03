@@ -255,7 +255,7 @@ a { color: inherit; }
 }
 .add-bar textarea {
   flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px;
-  font-size: 16px; background: var(--bg); font: inherit; resize: none; min-height: 66px;
+  font: inherit; font-size: 16px; background: var(--bg); resize: none; min-height: 66px;
 }
 .add-bar button {
   display: flex; align-items: center; justify-content: center;
