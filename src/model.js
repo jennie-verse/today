@@ -23,8 +23,14 @@ export const DEFAULT_SETTINGS = {
   font: 12,
   onboarded: false,
   lastBackupAt: null,
+  lastAddKind: "task",
+  somedayFilter: "all",
 };
 
+// trim() only strips leading/trailing whitespace, so internal newlines
+// already survive here — this is what lets a Note preserve line breaks
+// (plan §2 clampText note-branch) while task/event titles still get the
+// same trim+clamp treatment.
 export function clampText(value, max) {
   if (typeof value !== "string") return "";
   return value.trim().slice(0, max);
@@ -84,7 +90,7 @@ export function normalizeTask(draft) {
     doneAt: status === "done" ? (draft.doneAt || new Date().toISOString()) : null,
     doneDate: status === "done" ? (draft.doneDate || dateKey(new Date())) : null,
     subtasks,
-    source: draft.source === "tide" ? "tide" : "manual",
+    source: draft.source === "tide" ? "tide" : draft.source === "clip" ? "clip" : "manual",
     createdAt: draft.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -253,6 +259,60 @@ export function staleDoneTasks(tasks, todayDateKey) {
 }
 
 // ---------- activity inference (for the local ledger and Journal) ----------
+
+// ---------- Someday: order-sort + filter chips (plan §3-4, stage 2) ----------
+
+// Someday now sorts by `order` ascending (input order) instead of
+// scheduledFor/title. Filter narrows by kind: "all" | "task" | "note".
+export function somedayFiltered(tasks, filter = "all") {
+  const list = somedayTasks(tasks).slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  if (filter === "task") return list.filter((t) => taskType(t) === "task");
+  if (filter === "note") return list.filter((t) => taskType(t) === "note");
+  return list;
+}
+
+// ---------- kind-switching (plan §3-6 "종류 바꾸기") ----------
+//
+// Task <-> Note <-> Event. Decision (documented in docs/TEST-REPORT.md §8):
+// converting Task -> Note DISCARDS subtasks (Notes have no subtask concept);
+// callers must warn/confirm first when the task has subtasks — this function
+// itself just performs the conversion once the caller has decided to proceed.
+// Note -> Task never fabricates subtasks (starts with none, same as today).
+// Switching to "event" leaves scheduledFor/scheduledAtMinutes as they are
+// (unset if they were unset) — the user sets a time afterwards via Edit;
+// switching away from "event" leaves scheduledAtMinutes untouched since a
+// Task/Note simply ignores it (only relevant to the "event" tier/badge).
+export function switchTaskKind(task, kind) {
+  if (!TYPES.has(kind)) throw new Error(`Unknown kind: ${kind}`);
+  const draft = { ...task, type: kind };
+  if (kind === "note") draft.subtasks = [];
+  return normalizeTask(draft);
+}
+
+// ---------- Turn into tasks (plan §4) ----------
+//
+// Splits a Note's text on newlines ONLY (no sentence-splitting), discarding
+// blank lines. Returns plain strings in order — callers decide which are
+// checked/edited before creating.
+export function splitNoteLines(text) {
+  return String(text || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+// Builds normalized Task drafts (status "someday") from the chosen lines,
+// with `order` continuing immediately after the source note's order so they
+// land right after it in Someday's order-sorted list (plan §4.4).
+export function tasksFromNoteLines(lines, sourceOrder) {
+  const base = Number.isFinite(sourceOrder) ? sourceOrder : 0;
+  return lines.map((title, i) => normalizeTask({
+    title,
+    type: "task",
+    status: "someday",
+    order: base + 1 + i,
+  }));
+}
 
 export function inferTaskAction(next, previous) {
   if (!previous) return "created";

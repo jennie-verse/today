@@ -214,16 +214,35 @@ a { color: inherit; }
 }
 .someday-row .task-row .actions { gap: 0; }
 
+/* Note cards in Someday clamp to 4 lines by default (plan §3-4); tapping
+   toggles .expanded to lift the clamp. textContent-only, no innerHTML. */
+.someday-row.type-note .note-clamp {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden;
+  white-space: pre-wrap; word-break: break-word; cursor: pointer;
+}
+.someday-row.type-note .note-clamp.expanded {
+  -webkit-line-clamp: unset; display: block;
+}
+
 .empty-hint { color: var(--text-3); font-size: calc(var(--f) * 0.95); padding: 8px 2px; }
 
+/* ---------- Someday filter chips ---------- */
+#someday-filter-chips { margin: 4px 0 6px; }
+
 /* ---------- Add bar ---------- */
+.add-wrap { flex: 0 0 auto; border-top: 1px solid var(--line); background: var(--card); }
+#add-kind-chips { padding: 8px 10px 0; }
 .add-bar {
   flex: 0 0 auto; display: flex; gap: 8px; padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
-  border-top: 1px solid var(--line); background: var(--card);
+  border-top: 0; background: var(--card); align-items: flex-end;
 }
 .add-bar input {
   flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 12px; padding: 0 12px;
   min-height: 44px; font-size: 16px; background: var(--bg);
+}
+.add-bar textarea {
+  flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px;
+  font-size: 16px; background: var(--bg); font: inherit; resize: none; min-height: 66px;
 }
 .add-bar button {
   width: 44px; height: 44px; flex: 0 0 44px; border-radius: 12px; border: 0; background: var(--accent);

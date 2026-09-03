@@ -56,6 +56,7 @@ export function taskToJournalRecord(task, options = {}) {
     deleted: options.deleted === true,
     title: includeContent ? String(task.title || "Untitled task") : "Today task",
     data: {
+      type: task.type === "note" || task.type === "event" ? task.type : "task",
       done: task.status === "done",
       subtaskCount: subtasks.length,
       subtaskDoneCount: subtasks.filter((s) => s.done).length,

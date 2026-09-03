@@ -3,7 +3,7 @@ import {
   normalizeTask, subtaskProgress, todayKey, taskType,
   reconcileToday, todayCandidates, somedayTasks, todaySlotTasks,
   migrateOrder, sortTodayTiers, autoPromoteEvents, todayDoneTasks, staleDoneTasks,
-  nextOrder,
+  nextOrder, somedayFiltered, switchTaskKind, splitNoteLines, tasksFromNoteLines,
 } from "./model.js";
 import { parseNaturalLanguage } from "./nlp-date.js";
 import * as store from "./store.js";
@@ -386,6 +386,167 @@ async function moveTask(task, direction, tierList) {
   await refresh();
 }
 
+// Task -> Note kind-switching drops subtasks (Notes have no subtask concept —
+// decision documented in docs/TEST-REPORT.md §8). Warn/confirm first if any
+// exist; Note -> Task never fabricates subtasks. Switching to/from "event"
+// leaves scheduledFor/scheduledAtMinutes untouched (simplest safe option —
+// the user picks a time afterwards via Edit if needed).
+async function changeTaskKind(task, kind) {
+  if (kind === taskType(task)) return;
+  if (kind === "note" && task.subtasks?.length) {
+    const ok = await confirmDialog({
+      title: "Change to Note?",
+      message: `하위 항목 ${task.subtasks.length}개가 사라집니다.`,
+      confirmLabel: "Change to Note",
+      danger: true,
+    });
+    if (!ok) return;
+  }
+  const next = switchTaskKind(task, kind);
+  await store.putTask(next);
+  toast("Kind changed");
+  await refresh();
+}
+
+function openKindSheet(task) {
+  const overlay = node("div", "overlay");
+  const frame = node("div", "frame");
+  const sheet = node("div", "sheet");
+  sheet.setAttribute("role", "dialog");
+  sheet.setAttribute("aria-modal", "true");
+  const header = node("div", "sheet-hdr");
+  header.append(node("h2", "", "Change kind"), (() => {
+    const b = node("button", "ico", "✕"); b.type = "button"; b.setAttribute("aria-label", "Close"); return b;
+  })());
+  const closeBtn = header.lastChild;
+  const body = node("div", "sheet-body menu-list");
+  function close() {
+    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    document.removeEventListener("keydown", onKey);
+  }
+  function onKey(e) { if (e.key === "Escape") close(); }
+  [["task", "☐ Task"], ["note", "— Note"], ["event", "⏱ Event"]].forEach(([kind, label]) => {
+    body.appendChild(menuItemButton(label, () => { close(); changeTaskKind(task, kind); }));
+  });
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+  document.addEventListener("keydown", onKey);
+  closeBtn.addEventListener("click", close);
+  sheet.append(header, body);
+  frame.appendChild(sheet);
+  overlay.appendChild(frame);
+  $("sheet-host").appendChild(overlay);
+}
+
+// Turn into tasks (plan §4): shows the note verbatim, splits only on
+// newlines (blank lines discarded), each line is an editable checked-by-
+// default row; "만들기" creates the checked lines as new Someday Tasks with
+// `order` continuing right after the source note's order. The original note
+// is never modified or deleted.
+function openTurnIntoTasksSheet(note) {
+  const overlay = node("div", "overlay");
+  const frame = node("div", "frame");
+  const sheet = node("div", "sheet");
+  sheet.setAttribute("role", "dialog");
+  sheet.setAttribute("aria-modal", "true");
+  const header = node("div", "sheet-hdr");
+  header.append(node("h2", "", "Turn into tasks"), (() => {
+    const b = node("button", "ico", "✕"); b.type = "button"; b.setAttribute("aria-label", "Close"); return b;
+  })());
+  const closeBtn = header.lastChild;
+
+  const body = node("div", "sheet-body");
+  const original = node("p", "hint");
+  original.style.whiteSpace = "pre-wrap";
+  original.textContent = note.title;
+  body.appendChild(original);
+
+  const list = node("div", "group-list");
+  body.appendChild(list);
+
+  const lines = splitNoteLines(note.title);
+  const rows = lines.map((text) => ({ text, checked: true }));
+
+  function renderRows() {
+    list.replaceChildren();
+    rows.forEach((r, idx) => {
+      const row = node("div", "subtask-row");
+      const check = node("button", "check" + (r.checked ? "" : ""));
+      check.type = "button";
+      check.setAttribute("aria-label", `${r.checked ? "Uncheck" : "Check"}: ${r.text}`);
+      const dot = node("span", "dot");
+      if (r.checked) dot.style.background = "var(--accent)";
+      check.appendChild(dot);
+      check.addEventListener("click", () => { r.checked = !r.checked; renderRows(); });
+
+      const titleEl = node("span", "title", r.text);
+      titleEl.style.cursor = "pointer";
+      titleEl.setAttribute("role", "button");
+      titleEl.setAttribute("tabindex", "0");
+      async function startEdit() {
+        const input = document.createElement("input");
+        input.type = "text";
+        input.maxLength = 140;
+        input.value = r.text;
+        input.style.flex = "1";
+        row.replaceChild(input, titleEl);
+        input.focus();
+        input.select();
+        let editComposing = false;
+        input.addEventListener("compositionstart", () => { editComposing = true; });
+        input.addEventListener("compositionend", () => { editComposing = false; });
+        function commit() {
+          const value = input.value.trim();
+          if (value) { rows[idx] = { ...rows[idx], text: value }; }
+          renderRows();
+        }
+        input.addEventListener("blur", commit);
+        input.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" && !editComposing) { e.preventDefault(); input.blur(); }
+          if (e.key === "Escape") { renderRows(); }
+        });
+      }
+      titleEl.addEventListener("click", startEdit);
+      titleEl.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); startEdit(); } });
+
+      row.append(check, titleEl);
+      list.appendChild(row);
+    });
+  }
+  renderRows();
+
+  const foot = node("div", "sheet-foot");
+  const cancelBtn = node("button", "btn ghost", "Cancel");
+  cancelBtn.type = "button";
+  const createBtn = node("button", "btn primary", "만들기");
+  createBtn.type = "button";
+  foot.append(cancelBtn, createBtn);
+
+  createBtn.addEventListener("click", async () => {
+    const chosen = rows.filter((r) => r.checked).map((r) => r.text);
+    if (!chosen.length) { close(); return; }
+    const drafts = tasksFromNoteLines(chosen, note.order);
+    for (const draft of drafts) await store.putTask(draft);
+    close();
+    toast(`${drafts.length} task${drafts.length === 1 ? "" : "s"} created`);
+    await refresh();
+  });
+
+  function close() {
+    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    document.removeEventListener("keydown", onKey);
+  }
+  function onKey(e) { if (e.key === "Escape") close(); }
+  cancelBtn.addEventListener("click", close);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+  document.addEventListener("keydown", onKey);
+  closeBtn.addEventListener("click", close);
+
+  sheet.append(header, body, foot);
+  frame.appendChild(sheet);
+  overlay.appendChild(frame);
+  $("sheet-host").appendChild(overlay);
+}
+
 function menuItemButton(label, onClick, { danger = false } = {}) {
   const b = document.createElement("button");
   b.type = "button";
@@ -438,6 +599,12 @@ function openRowMenu(task, { context, tierList }) {
   if (context !== "done" && kind === "note") {
     body.appendChild(menuItemButton("Archive to Done", act(() => completeTask(task))));
   }
+  if (context !== "done") {
+    body.appendChild(menuItemButton("종류 바꾸기", act(() => openKindSheet(task))));
+  }
+  if (context !== "done" && kind === "note") {
+    body.appendChild(menuItemButton("Turn into tasks", act(() => openTurnIntoTasksSheet(task))));
+  }
   body.appendChild(menuItemButton("Delete", act(() => deleteTask(task)), { danger: true }));
 
   overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
@@ -481,7 +648,19 @@ function taskRow(task, { context, tierList = [] }) {
   }
 
   const main = node("div", "main");
-  main.appendChild(node("div", "title", task.title));
+  const titleEl = node("div", "title", task.title);
+  // Someday Note cards clamp to 4 lines (plan §3-4); tapping toggles the
+  // .expanded class. textContent only — no innerHTML.
+  if (context === "someday" && kind === "note") {
+    titleEl.classList.add("note-clamp");
+    titleEl.setAttribute("role", "button");
+    titleEl.setAttribute("tabindex", "0");
+    titleEl.setAttribute("aria-label", "Expand note");
+    const toggle = () => titleEl.classList.toggle("expanded");
+    titleEl.addEventListener("click", toggle);
+    titleEl.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
+  }
+  main.appendChild(titleEl);
   const progress = subtaskProgress(task);
   if (progress.total) main.appendChild(node("div", "sub-progress", `${progress.done}/${progress.total} subtasks`));
   row.appendChild(main);
@@ -498,6 +677,27 @@ function taskRow(task, { context, tierList = [] }) {
     wrap.appendChild(list);
   }
   return wrap;
+}
+
+// ---------- Someday filter chips (plan §3-4) ----------
+
+const SOMEDAY_FILTERS = [["all", "All"], ["task", "☐ Tasks"], ["note", "— Notes"]];
+
+function renderSomedayFilterChips() {
+  const host = $("someday-filter-chips");
+  host.replaceChildren();
+  SOMEDAY_FILTERS.forEach(([value, label]) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "chip";
+    b.textContent = label;
+    b.setAttribute("aria-pressed", String((state.settings.somedayFilter || "all") === value));
+    b.addEventListener("click", async () => {
+      state.settings = store.setSettings({ somedayFilter: value });
+      render();
+    });
+    host.appendChild(b);
+  });
 }
 
 // ---------- render ----------
@@ -545,13 +745,17 @@ function render() {
     candHost.appendChild(row);
   });
 
-  const someday = somedayTasks(state.tasks).sort((a, b) => (a.scheduledFor || "9999").localeCompare(b.scheduledFor || "9999") || a.title.localeCompare(b.title));
+  renderSomedayFilterChips();
+  // Someday sorts by `order` ascending — input order — replacing the old
+  // scheduledFor/title sort (plan §3-4). Filter chip narrows by kind.
+  const someday = somedayFiltered(state.tasks, state.settings.somedayFilter);
   $("someday-count").textContent = `(${someday.length})`;
   const somedayHost = $("someday-list");
   somedayHost.replaceChildren();
   if (!someday.length) somedayHost.appendChild(node("p", "empty-hint", "Nothing in Someday."));
   someday.forEach((task) => {
-    const box = node("div", "someday-row");
+    const kind = taskType(task);
+    const box = node("div", "someday-row" + (kind === "note" ? " type-note" : ""));
     box.appendChild(taskRow(task, { context: "someday" }));
     somedayHost.appendChild(box);
   });
@@ -573,23 +777,91 @@ function render() {
 
 // ---------- add bar ----------
 
+const ADD_KINDS = [["task", "☐ Task"], ["note", "— Note"], ["event", "⏱ Event"]];
 let composingAdd = false;
+let composingNote = false;
+
+function currentAddKind() {
+  const kind = state.settings.lastAddKind;
+  return ADD_KINDS.some(([k]) => k === kind) ? kind : "task";
+}
+
+function applyAddKindUI() {
+  const input = $("add-input");
+  const textarea = $("add-textarea");
+  const isNote = currentAddKind() === "note";
+  // Note grows the input into a ~3-line textarea that preserves newlines
+  // (plan §3-1); Task/Event keep the single-line input, whose kind is still
+  // resolved by the NL parser at submit time (a parsed time -> Event).
+  input.hidden = isNote;
+  textarea.hidden = !isNote;
+  $("add-kind-chips").querySelectorAll(".chip").forEach((b) => {
+    b.setAttribute("aria-pressed", String(b.dataset.kind === currentAddKind()));
+  });
+}
+
+function wireAddKindChips() {
+  const host = $("add-kind-chips");
+  host.replaceChildren();
+  ADD_KINDS.forEach(([kind, label]) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "chip";
+    b.dataset.kind = kind;
+    b.textContent = label;
+    b.addEventListener("click", () => {
+      state.settings = store.setSettings({ lastAddKind: kind });
+      applyAddKindUI();
+      (kind === "note" ? $("add-textarea") : $("add-input")).focus();
+    });
+    host.appendChild(b);
+  });
+  applyAddKindUI();
+}
 
 function wireAddBar() {
   const input = $("add-input");
+  const textarea = $("add-textarea");
   const submit = $("add-submit");
   input.addEventListener("compositionstart", () => { composingAdd = true; });
   input.addEventListener("compositionend", () => { composingAdd = false; });
+  // Same Korean IME composition guard as the existing input, replicated on
+  // the new Note textarea so Enter during composition never submits early.
+  textarea.addEventListener("compositionstart", () => { composingNote = true; });
+  textarea.addEventListener("compositionend", () => { composingNote = false; });
 
   async function submitAdd() {
+    const isNote = currentAddKind() === "note";
+    if (isNote) {
+      if (composingNote) return;
+      const raw = textarea.value;
+      if (!raw.trim()) return;
+      try {
+        // Note preserves internal newlines — clampText only trims the ends
+        // (plan §2 clampText note-branch).
+        const task = normalizeTask({
+          title: raw,
+          type: "note",
+          status: "someday",
+          order: nextOrder(state.tasks, "someday"),
+        });
+        await store.putTask(task);
+        textarea.value = "";
+        await refresh();
+        toast("Added to Someday");
+      } catch (err) {
+        toast(err?.message || "Couldn't add that note");
+      }
+      return;
+    }
     if (composingAdd) return;
     const raw = input.value;
     if (!raw.trim()) return;
     const parsed = parseNaturalLanguage(raw, { now: new Date() });
     try {
-      // Stage 1 has no add-bar kind chips yet (that's stage 2): a parsed
-      // time makes it an Event (plan §2), otherwise it's a plain Task.
-      const type = Number.isFinite(parsed.scheduledAtMinutes) ? "event" : "task";
+      // A parsed time makes it an Event (plan §2), otherwise it keeps
+      // whichever of Task/Event the chips selected (Note is handled above).
+      const type = Number.isFinite(parsed.scheduledAtMinutes) ? "event" : (currentAddKind() === "event" ? "event" : "task");
       const task = normalizeTask({
         title: parsed.title,
         type,
@@ -611,6 +883,9 @@ function wireAddBar() {
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !composingAdd) { e.preventDefault(); submitAdd(); }
   });
+  // Enter inserts a newline in the Note textarea (multi-line input) — only
+  // the ＋ button submits a note, unlike the single-line Task/Event input.
+  wireAddKindChips();
 }
 
 // ---------- URL intake (?add=) — used by tide's "Send to today" ----------
@@ -623,14 +898,18 @@ function handleUrlIntake() {
   try { history.replaceState({}, "", location.pathname + location.hash); } catch { /* ignore */ }
   if (!add.trim()) return;
   const parsed = parseNaturalLanguage(add, { now: new Date() });
-  const source = params.get("from") === "tide" ? "tide" : "manual";
+  // clip readiness (plan §5/stage 2 prep): accept ?from=clip the same way
+  // ?from=tide is already accepted. clip doesn't exist yet — inert until it
+  // does, but today-side handling is ready.
+  const fromParam = params.get("from");
+  const source = fromParam === "tide" ? "tide" : fromParam === "clip" ? "clip" : "manual";
   const type = Number.isFinite(parsed.scheduledAtMinutes) ? "event" : "task";
   store.putTask(normalizeTask({
     title: parsed.title, type, status: "someday", order: nextOrder(state.tasks, "someday"),
     scheduledFor: parsed.scheduledFor, scheduledAtMinutes: parsed.scheduledAtMinutes, source,
   }))
     .then(refresh)
-    .then(() => toast(`Added to Someday from ${source === "tide" ? "Tide" : "link"}`));
+    .then(() => toast(`Added to Someday from ${source === "tide" ? "Tide" : source === "clip" ? "Clip" : "link"}`));
 }
 
 // ---------- boot ----------

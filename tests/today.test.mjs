@@ -261,6 +261,76 @@ test('todayDoneTasks only returns items done today, sorted by doneAt ascending; 
   assert.deepEqual(stale.map((t) => t.title), ['old']);
 });
 
+// ---------- brain-dump stage 2: Someday sort/filter, kind-switching, Turn into tasks ----------
+
+test('somedayFiltered sorts by order ascending (input order), not scheduledFor/title', () => {
+  const tasks = [
+    model.normalizeTask({ title: 'z-first', status: 'someday', order: 0, scheduledFor: '2026-09-05' }),
+    model.normalizeTask({ title: 'a-second', status: 'someday', order: 1, scheduledFor: '2026-09-01' }),
+    model.normalizeTask({ title: 'not-someday', status: 'today', todayDate: model.todayKey(), order: 0 }),
+  ];
+  assert.deepEqual(model.somedayFiltered(tasks, 'all').map((t) => t.title), ['z-first', 'a-second']);
+});
+
+test('somedayFiltered narrows by kind: all/task/note', () => {
+  const tasks = [
+    model.normalizeTask({ title: 'note1', type: 'note', status: 'someday', order: 0 }),
+    model.normalizeTask({ title: 'task1', type: 'task', status: 'someday', order: 1 }),
+    model.normalizeTask({ title: 'event1', type: 'event', status: 'someday', order: 2 }),
+  ];
+  assert.deepEqual(model.somedayFiltered(tasks, 'task').map((t) => t.title), ['task1']);
+  assert.deepEqual(model.somedayFiltered(tasks, 'note').map((t) => t.title), ['note1']);
+  assert.deepEqual(model.somedayFiltered(tasks, 'all').map((t) => t.title), ['note1', 'task1', 'event1']);
+});
+
+test('switchTaskKind converts Task <-> Note <-> Event and drops subtasks going to Note', () => {
+  const task = model.normalizeTask({
+    title: 'a task', type: 'task', status: 'someday',
+    subtasks: [{ title: 'sub1' }, { title: 'sub2' }],
+  });
+  const asNote = model.switchTaskKind(task, 'note');
+  assert.equal(asNote.type, 'note');
+  assert.deepEqual(asNote.subtasks, [], 'subtasks are discarded converting Task -> Note');
+
+  const note = model.normalizeTask({ title: 'a note', type: 'note', status: 'someday' });
+  const asTask = model.switchTaskKind(note, 'task');
+  assert.equal(asTask.type, 'task');
+  assert.deepEqual(asTask.subtasks, [], 'Note -> Task never fabricates subtasks');
+
+  const asEvent = model.switchTaskKind(task, 'event');
+  assert.equal(asEvent.type, 'event');
+  assert.equal(asEvent.scheduledAtMinutes, null, 'no time is fabricated switching to Event');
+
+  assert.throws(() => model.switchTaskKind(task, 'bogus'));
+});
+
+test('splitNoteLines splits only on newlines, discards blank lines, no sentence-splitting', () => {
+  assert.deepEqual(model.splitNoteLines('line1\n\nline2\n  \nline3'), ['line1', 'line2', 'line3']);
+  assert.deepEqual(model.splitNoteLines('one sentence. another sentence.'), ['one sentence. another sentence.']);
+  assert.deepEqual(model.splitNoteLines(''), []);
+  assert.deepEqual(model.splitNoteLines('  \n \n'), []);
+});
+
+test('tasksFromNoteLines creates Someday Task drafts with order continuing right after the source note', () => {
+  const drafts = model.tasksFromNoteLines(['first', 'second', 'third'], 4);
+  assert.equal(drafts.length, 3);
+  assert.deepEqual(drafts.map((d) => d.order), [5, 6, 7]);
+  assert.ok(drafts.every((d) => d.type === 'task' && d.status === 'someday'));
+  assert.deepEqual(drafts.map((d) => d.title), ['first', 'second', 'third']);
+});
+
+test('tasksFromNoteLines treats a missing/non-finite source order as 0', () => {
+  const drafts = model.tasksFromNoteLines(['only'], null);
+  assert.equal(drafts[0].order, 1);
+});
+
+test('normalizeTask accepts "clip" as a source, keeps "tide" working, and defaults everything else to "manual"', () => {
+  assert.equal(model.normalizeTask({ title: 'a', source: 'clip' }).source, 'clip');
+  assert.equal(model.normalizeTask({ title: 'a', source: 'tide' }).source, 'tide');
+  assert.equal(model.normalizeTask({ title: 'a', source: 'bogus' }).source, 'manual');
+  assert.equal(model.normalizeTask({ title: 'a' }).source, 'manual');
+});
+
 // ---------- nlp-date.js ----------
 // A fixed Wednesday so weekday math is deterministic across the suite.
 const WED = new Date(2026, 7, 26, 10, 0, 0);
@@ -341,6 +411,15 @@ test('taskToJournalRecord sends counts by default and only sends subtask text wh
   assert.equal(contentOff.title, 'Today task');
   assert.equal(contentOff.data.subtasks, undefined, 'subtask text never leaks when the overall content toggle is off');
   assert.equal(contentOff.data.contentIncluded, false);
+});
+
+test('taskToJournalRecord includes the row\'s type in data (task/note/event) for Daybook rendering', () => {
+  const task = model.normalizeTask({ title: 'a task', type: 'task', status: 'today', todayDate: '2026-08-26' });
+  const note = model.normalizeTask({ title: 'a note', type: 'note', status: 'done', doneDate: '2026-08-26' });
+  const event = model.normalizeTask({ title: 'an event', type: 'event', status: 'today', todayDate: '2026-08-26', scheduledAtMinutes: 540 });
+  assert.equal(taskToJournalRecord(task, {}).data.type, 'task');
+  assert.equal(taskToJournalRecord(note, {}).data.type, 'note');
+  assert.equal(taskToJournalRecord(event, {}).data.type, 'event');
 });
 
 test('a plain Someday task (no todayDate, not done) cannot be projected as a task record', () => {

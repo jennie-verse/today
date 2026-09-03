@@ -82,3 +82,17 @@ today는 비공개 저장소 `webapp-data`와 loom·tide·folio가 이미 쓰는
 7. **동기화가 3칸 고정·자동 이월 금지 원칙을 흔들면 안 됩니다.** 두 기기의 변경이 합쳐져 3개를 넘으면 첫 3개만 고정 슬롯에 두고, 초과분은 `Needs review`에 전부 노출합니다. 자동 삭제·자동 이동은 하지 않습니다.
 
 현재 저장소가 직접 소유하는 `tests/today.test.mjs`가 model·파서·Journal 레코드 경계를 확인합니다. `npm test`로 재실행합니다.
+
+## Brain-dump stage 2 (2026-09-03 추가)
+
+- 입력창 위 종류 칩(`☐ Task` / `— Note` / `⏱ Event`), Note 여러 줄 입력(textarea, 줄바꿈 보존), 마지막 선택 칩은
+  `settings.lastAddKind`에 저장.
+- `⋯` 메뉴에 **종류 바꾸기**(Task ⇄ Note ⇄ Event, `model.switchTaskKind`)와 Note 전용 **Turn into tasks**
+  (`model.splitNoteLines` / `model.tasksFromNoteLines`) 추가.
+- Someday는 `order` 오름차순 정렬(`model.somedayFiltered`)로 바뀌고, 필터 칩(`settings.somedayFilter`)과
+  Note 카드 4줄 클램프(`-webkit-line-clamp`, `.note-clamp`/`.expanded`)가 추가됨.
+- `src/journal-record.js`의 task 레코드 `data`에 `type`(task/note/event) 추가 — Daybook stage 4 준비용, Daybook
+  자체는 아직 손대지 않음.
+- `src/model.js`의 `source` 허용값에 `"clip"` 추가(`"tide"`는 계속 유효), `?add=` intake가 `?from=clip`도
+  `?from=tide`와 같은 방식으로 인식 — clip 앱 자체는 아직 없어 지금은 비활성 상태.
+- 새 코드도 전부 `textContent`만 사용, `innerHTML` 없음. IndexedDB 스키마 버전 변경 없음(추가 필드만).
