@@ -143,7 +143,12 @@ a { color: inherit; }
 .task-row .sub-progress { font-size: calc(var(--f) * 0.82); color: var(--text-3); margin-top: 2px; }
 .task-row .actions { display: flex; gap: 2px; flex: 0 0 auto; }
 .task-row .actions button {
-  width: 44px; height: 44px; background: none; border: 0; border-radius: 8px; cursor: pointer;
+  /* Same 44px-touch-target-but-visually-smaller trick as .check above: the
+     44px box (accessibility floor) is pulled in with a negative margin so it
+     doesn't force every row to be 44px tall regardless of how little text
+     is in it — this button was the one place that trick was missing, so a
+     single-line row with no subtasks still came out 44px tall. */
+  width: 44px; height: 44px; margin: -9px -9px -9px 0; background: none; border: 0; border-radius: 8px; cursor: pointer;
   color: var(--text-2); font-size: calc(var(--f) * 1.1); display: flex; align-items: center; justify-content: center;
 }
 .task-row .actions button:active { background: var(--accent-tint); }
