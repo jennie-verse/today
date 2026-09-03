@@ -421,7 +421,7 @@ function openRowMenu(task, { context, tierList }) {
 
   const kind = taskType(task);
   body.appendChild(menuItemButton("Edit", act(() => openTaskEditor(task))));
-  if (context !== "done" && kind !== "note") {
+  if (context !== "done" && kind === "task") {
     body.appendChild(menuItemButton("Edit subtasks", act(() => openSubtaskEditor(task))));
   }
   if (context === "today") {
