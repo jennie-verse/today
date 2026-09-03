@@ -102,6 +102,84 @@ test('doneTasksByDate groups by doneDate, most recent day first', () => {
   assert.equal(groups[0][1].length, 2);
 });
 
+// ---------- brain-dump stage 1: type/order/tiers ----------
+
+test('taskType defaults missing/unknown type to "task", keeping old records reading correctly', () => {
+  assert.equal(model.taskType({ type: 'note' }), 'note');
+  assert.equal(model.taskType({ type: 'event' }), 'event');
+  assert.equal(model.taskType({}), 'task');
+  assert.equal(model.taskType({ type: 'bogus' }), 'task');
+  assert.equal(model.taskType(undefined), 'task');
+});
+
+test('normalizeTask defaults type to "task" and clamps Note title to LIMITS.note while preserving newlines', () => {
+  const task = model.normalizeTask({ title: 'plain' });
+  assert.equal(task.type, 'task');
+  assert.equal(task.order, null);
+  const note = model.normalizeTask({ title: 'line1\nline2', type: 'note' });
+  assert.equal(note.type, 'note');
+  assert.equal(note.title, 'line1\nline2');
+  const longNote = model.normalizeTask({ title: 'x'.repeat(3000), type: 'note' });
+  assert.equal(longNote.title.length, model.LIMITS.note);
+});
+
+test('migrateOrder assigns order by ascending createdAt, separately per status bucket, only to records missing it', () => {
+  const tasks = [
+    model.normalizeTask({ title: 'a', status: 'someday', createdAt: '2026-08-01T00:00:00.000Z' }),
+    model.normalizeTask({ title: 'b', status: 'someday', createdAt: '2026-08-02T00:00:00.000Z' }),
+    model.normalizeTask({ title: 'c', status: 'today', todayDate: '2026-08-26', createdAt: '2026-08-01T00:00:00.000Z' }),
+    { ...model.normalizeTask({ title: 'd', status: 'someday', createdAt: '2026-08-03T00:00:00.000Z' }), order: 9 },
+  ];
+  const changed = model.migrateOrder(tasks);
+  const a = changed.find((t) => t.title === 'a');
+  const b = changed.find((t) => t.title === 'b');
+  const c = changed.find((t) => t.title === 'c');
+  assert.ok(a.order < b.order, 'ascending createdAt within the someday bucket');
+  assert.equal(c.order, 0, 'today bucket numbers separately from someday');
+  assert.equal(changed.find((t) => t.title === 'd'), undefined, 'already-ordered records are left alone');
+});
+
+test('todayTierGroups splits Event/Task/Note and sorts events by scheduledAtMinutes (no value last)', () => {
+  const tasks = [
+    model.normalizeTask({ title: 'note1', type: 'note', status: 'today', todayDate: '2026-08-26', order: 1 }),
+    model.normalizeTask({ title: 'ev-late', type: 'event', status: 'today', todayDate: '2026-08-26', scheduledAtMinutes: 900 }),
+    model.normalizeTask({ title: 'ev-no-time', type: 'event', status: 'today', todayDate: '2026-08-26' }),
+    model.normalizeTask({ title: 'ev-early', type: 'event', status: 'today', todayDate: '2026-08-26', scheduledAtMinutes: 100 }),
+    model.normalizeTask({ title: 'task1', type: 'task', status: 'today', todayDate: '2026-08-26', order: 0 }),
+  ];
+  const groups = model.todayTierGroups(tasks);
+  assert.deepEqual(groups.events.map((t) => t.title), ['ev-early', 'ev-late', 'ev-no-time']);
+  assert.deepEqual(groups.tasks.map((t) => t.title), ['task1']);
+  assert.deepEqual(groups.notes.map((t) => t.title), ['note1']);
+});
+
+test('autoPromoteEvents only promotes Someday events scheduled for today; tasks/notes never auto-promote', () => {
+  const tasks = [
+    model.normalizeTask({ title: 'event-today', type: 'event', status: 'someday', scheduledFor: '2026-08-26' }),
+    model.normalizeTask({ title: 'event-later', type: 'event', status: 'someday', scheduledFor: '2026-08-27' }),
+    model.normalizeTask({ title: 'task-today', type: 'task', status: 'someday', scheduledFor: '2026-08-26' }),
+    model.normalizeTask({ title: 'note-today', type: 'note', status: 'someday', scheduledFor: '2026-08-26' }),
+  ];
+  const { tasks: next, promoted } = model.autoPromoteEvents(tasks, '2026-08-26');
+  assert.equal(promoted.length, 1);
+  const promotedTask = next.find((t) => t.id === promoted[0]);
+  assert.equal(promotedTask.title, 'event-today');
+  assert.equal(promotedTask.status, 'today');
+  assert.equal(promotedTask.todayDate, '2026-08-26');
+  assert.equal(next.find((t) => t.title === 'task-today').status, 'someday');
+  assert.equal(next.find((t) => t.title === 'note-today').status, 'someday');
+});
+
+test('todayDoneTasks/staleDoneTasks split Done by today\'s doneDate, sorted by doneAt ascending', () => {
+  const tasks = [
+    model.normalizeTask({ title: 'old', status: 'done', doneDate: '2026-08-20', doneAt: '2026-08-20T10:00:00.000Z' }),
+    model.normalizeTask({ title: 'today-late', status: 'done', doneDate: '2026-08-26', doneAt: '2026-08-26T15:00:00.000Z' }),
+    model.normalizeTask({ title: 'today-early', status: 'done', doneDate: '2026-08-26', doneAt: '2026-08-26T09:00:00.000Z' }),
+  ];
+  assert.deepEqual(model.todayDoneTasks(tasks, '2026-08-26').map((t) => t.title), ['today-early', 'today-late']);
+  assert.deepEqual(model.staleDoneTasks(tasks, '2026-08-26').map((t) => t.title), ['old']);
+});
+
 test('inferTaskAction covers created/deleted/completed/reopened/promoted/deferred/edited', () => {
   const someday = model.normalizeTask({ title: 'a', status: 'someday' });
   const today = model.normalizeTask({ ...someday, status: 'today', todayDate: '2026-08-26' });

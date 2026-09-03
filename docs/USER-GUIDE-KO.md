@@ -35,17 +35,28 @@
 
 새로 추가된 항목은 항상 **Someday**로 들어갑니다. Today 3칸에 넣으려면 직접 "→" 버튼을 눌러야 합니다.
 
+## `⋯` 메뉴
+
+항목마다 있던 개별 아이콘 버튼들은 오른쪽 `⋯` 하나로 모여 있습니다. 눌러서 열리는 시트에는 상황에 맞는 항목만 보입니다:
+
+- **Edit** — 제목(과 자연어로 넣은 날짜/시각)을 고칩니다.
+- **Edit subtasks** — Task에만 보입니다.
+- **Move up / Move down** — Today에서만 보이며, **같은 덩어리(Event/Task/Note) 안에서만** 순서를 바꿉니다.
+- **Move to Someday / Move to Today** — 현재 위치에 따라 하나만 보입니다.
+- **Archive to Done** — Note에만 보입니다. Note는 체크박스가 없어 이 메뉴로만 Done으로 보낼 수 있습니다.
+- **Reopen** — Done에서만 보입니다. Someday로 돌아갑니다(Today로 자동 복귀하지 않습니다).
+- **Delete** — 삭제 전 확인을 받습니다.
+
 ## 하위 단계(Subtasks)
 
-- 항목의 ✎(Edit subtasks) 버튼을 누르면 하위 단계를 추가·삭제·체크할 수 있습니다.
+- Task 항목의 `⋯` → Edit subtasks에서 하위 단계를 추가·삭제·체크할 수 있습니다.
 - 하나의 항목에 최대 5개까지 붙일 수 있습니다.
 - 하위 단계를 전부 체크해도 상위 항목이 자동으로 완료되지 않습니다. 완료는 상위 항목의 원 모양 체크를 직접 눌러야 합니다.
-- Today 3칸 제한은 상위 항목만 셉니다. 하위 단계는 개수에 들어가지 않습니다.
 
 ## 완료·되돌리기
 
-- 항목 왼쪽의 원을 누르면 완료(Done)로 이동합니다. Done에서 다시 누르면 Someday로 돌아옵니다(Today로 자동 복귀하지 않습니다).
-- Today ↩(Move to Someday), Someday →(Move to Today), 🗑(Delete) 버튼으로 이동·삭제할 수 있습니다. 삭제는 확인을 받습니다.
+- Task/Event는 항목 왼쪽의 원을 누르면 완료(Done)로 이동합니다. Note는 체크박스가 없으므로 `⋯` → Archive to Done을 사용합니다.
+- Done에서 `⋯` → Reopen을 누르면 Someday로 돌아옵니다(Today로 자동 복귀하지 않습니다).
 
 ## 자정이 지나면
 
