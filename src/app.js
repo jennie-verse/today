@@ -131,6 +131,16 @@ async function completeTask(task) {
   await refresh();
 }
 
+// Dismisses a "today candidate" suggestion without promoting it — clears
+// scheduledFor so it stops matching todayCandidates and quietly stays a
+// normal Someday item (still reachable there, just no longer suggested).
+async function skipCandidate(task) {
+  const next = normalizeTask({ ...task, scheduledFor: null });
+  await store.putTask(next);
+  toast(`Kept in Someday`);
+  await refresh();
+}
+
 async function promoteTask(task) {
   const next = normalizeTask({ ...task, status: "today", order: nextOrder(state.tasks, "today"), todayDate: todayKey() });
   await store.putTask(next);
@@ -169,19 +179,26 @@ function openTaskEditor(task) {
   sheet.setAttribute("role", "dialog");
   sheet.setAttribute("aria-modal", "true");
   const header = node("div", "sheet-hdr");
-  header.append(node("h2", "", "Edit task"), (() => {
+  const isNote = task.type === "note";
+  header.append(node("h2", "", isNote ? "Edit note" : "Edit task"), (() => {
     const b = node("button", "ico", "✕"); b.type = "button"; b.setAttribute("aria-label", "Close"); return b;
   })());
   const closeBtn = header.lastChild;
 
   const body = node("div", "sheet-body");
-  const input = document.createElement("input");
-  input.type = "text";
-  input.maxLength = 200;
+  // Note keeps its multi-line textarea in Edit too — Enter must insert a
+  // newline there (same as the add-bar's Note textarea), not submit. Only
+  // Task/Event use the single-line input where Enter saves, and only those
+  // go through the NL parser: a Note's raw text is never reinterpreted as a
+  // date/time phrase and its internal newlines must survive the round trip.
+  const input = isNote ? document.createElement("textarea") : document.createElement("input");
+  if (!isNote) input.type = "text";
+  input.maxLength = isNote ? 2000 : 200;
   input.value = task.title;
   input.style.width = "100%";
-  input.setAttribute("aria-label", "Task title");
-  const hint = node("p", "hint", "You can include a date/time, e.g. \"tomorrow 9am\".");
+  if (isNote) { input.style.minHeight = "120px"; input.style.resize = "vertical"; }
+  input.setAttribute("aria-label", isNote ? "Note text" : "Task title");
+  const hint = node("p", "hint", isNote ? "" : "You can include a date/time, e.g. \"tomorrow 9am\".");
   body.append(input, hint);
 
   const foot = node("div", "sheet-foot");
@@ -199,19 +216,24 @@ function openTaskEditor(task) {
     if (composing) return;
     const raw = input.value;
     if (!raw.trim()) { toast("Title is required."); return; }
-    const parsed = parseNaturalLanguage(raw, { now: new Date() });
     try {
-      // Stage 1 has no kind-switching UI yet: a Note keeps being a Note, but
-      // a Task/Event's kind still tracks whether the edited text carries a
-      // time, same rule as creation (plan §2).
-      const type = task.type === "note" ? "note" : (Number.isFinite(parsed.scheduledAtMinutes) ? "event" : "task");
-      const next = normalizeTask({
-        ...task,
-        title: parsed.title,
-        type,
-        scheduledFor: parsed.scheduledFor,
-        scheduledAtMinutes: parsed.scheduledAtMinutes,
-      });
+      let next;
+      if (isNote) {
+        next = normalizeTask({ ...task, title: raw, type: "note" });
+      } else {
+        const parsed = parseNaturalLanguage(raw, { now: new Date() });
+        // Stage 1 has no kind-switching UI yet: a Task/Event's kind still
+        // tracks whether the edited text carries a time, same rule as
+        // creation (plan §2).
+        const type = Number.isFinite(parsed.scheduledAtMinutes) ? "event" : "task";
+        next = normalizeTask({
+          ...task,
+          title: parsed.title,
+          type,
+          scheduledFor: parsed.scheduledFor,
+          scheduledAtMinutes: parsed.scheduledAtMinutes,
+        });
+      }
       await store.putTask(next);
       close();
       toast("Task updated");
@@ -229,9 +251,11 @@ function openTaskEditor(task) {
   closeBtn.addEventListener("click", close);
   cancelBtn.addEventListener("click", close);
   saveBtn.addEventListener("click", save);
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !composing) { e.preventDefault(); save(); }
-  });
+  if (!isNote) {
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !composing) { e.preventDefault(); save(); }
+    });
+  }
   overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
   document.addEventListener("keydown", onKey);
 
@@ -590,6 +614,8 @@ function openRowMenu(task, { context, tierList }) {
     body.appendChild(menuItemButton("Move down", act(() => moveTask(task, 1, tierList))));
     body.appendChild(menuItemButton("Move to Someday", act(() => deferTask(task))));
   } else if (context === "someday") {
+    body.appendChild(menuItemButton("Move up", act(() => moveTask(task, -1, tierList))));
+    body.appendChild(menuItemButton("Move down", act(() => moveTask(task, 1, tierList))));
     body.appendChild(menuItemButton("Move to Today", act(() => promoteTask(task))));
   } else if (context === "done") {
     body.appendChild(menuItemButton("Reopen", act(() => completeTask(task))));
@@ -738,10 +764,16 @@ function render() {
   candidates.forEach((task) => {
     const row = node("div", "candidate-row");
     row.appendChild(node("div", "title", task.title));
+    const actions = node("div", "candidate-actions");
+    const skipBtn = node("button", "ghost", "Keep in Someday");
+    skipBtn.type = "button";
+    skipBtn.setAttribute("aria-label", `Keep in Someday: ${task.title}`);
+    skipBtn.addEventListener("click", () => skipCandidate(task));
     const btn = node("button", "", "Add to Today");
     btn.type = "button";
     btn.addEventListener("click", () => promoteTask(task));
-    row.appendChild(btn);
+    actions.append(skipBtn, btn);
+    row.appendChild(actions);
     candHost.appendChild(row);
   });
 
@@ -756,7 +788,7 @@ function render() {
   someday.forEach((task) => {
     const kind = taskType(task);
     const box = node("div", "someday-row" + (kind === "note" ? " type-note" : ""));
-    box.appendChild(taskRow(task, { context: "someday" }));
+    box.appendChild(taskRow(task, { context: "someday", tierList: someday }));
     somedayHost.appendChild(box);
   });
 

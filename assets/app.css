@@ -108,11 +108,11 @@ a { color: inherit; }
 .today-slots { display: flex; flex-direction: column; gap: 8px; }
 .slot {
   background: var(--card); border: 1px solid var(--line); border-radius: 14px;
-  padding: 10px 12px; min-height: 56px;
+  padding: 8px 12px;
 }
 .slot.empty {
   display: flex; align-items: center; justify-content: center; color: var(--text-3);
-  font-size: calc(var(--f) * 0.95); border-style: dashed;
+  font-size: calc(var(--f) * 0.95); border-style: dashed; min-height: 56px;
 }
 .overflow-section {
   padding: 10px 12px 12px; border: 1px solid var(--peach); border-radius: 14px;
@@ -192,9 +192,13 @@ a { color: inherit; }
   border-radius: 12px; padding: 8px 10px; margin-bottom: 6px;
 }
 .candidate-row .title { flex: 1; font-size: calc(var(--f) * 0.98); min-width: 0; word-break: break-word; }
+.candidate-actions { display: flex; gap: 6px; flex: 0 0 auto; }
 .candidate-row button {
   min-height: 44px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--accent);
   background: var(--card); color: var(--on-accent); font-weight: 700; font-size: calc(var(--f) * 0.9); cursor: pointer;
+}
+.candidate-row button.ghost {
+  border-color: var(--line); color: var(--text-2); font-weight: 400;
 }
 
 /* ---------- Someday / Done collapsibles ---------- */
