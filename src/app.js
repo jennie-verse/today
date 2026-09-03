@@ -396,7 +396,7 @@ async function changeTaskKind(task, kind) {
   if (kind === "note" && task.subtasks?.length) {
     const ok = await confirmDialog({
       title: "Change to Note?",
-      message: `하위 항목 ${task.subtasks.length}개가 사라집니다.`,
+      message: `${task.subtasks.length} subtask${task.subtasks.length === 1 ? "" : "s"} will be removed.`,
       confirmLabel: "Change to Note",
       danger: true,
     });
@@ -415,7 +415,7 @@ function openKindSheet(task) {
   sheet.setAttribute("role", "dialog");
   sheet.setAttribute("aria-modal", "true");
   const header = node("div", "sheet-hdr");
-  header.append(node("h2", "", "Change kind"), (() => {
+  header.append(node("h2", "", "Change type"), (() => {
     const b = node("button", "ico", "✕"); b.type = "button"; b.setAttribute("aria-label", "Close"); return b;
   })());
   const closeBtn = header.lastChild;
@@ -439,7 +439,7 @@ function openKindSheet(task) {
 
 // Turn into tasks (plan §4): shows the note verbatim, splits only on
 // newlines (blank lines discarded), each line is an editable checked-by-
-// default row; "만들기" creates the checked lines as new Someday Tasks with
+// default row; "Create" creates the checked lines as new Someday Tasks with
 // `order` continuing right after the source note's order. The original note
 // is never modified or deleted.
 function openTurnIntoTasksSheet(note) {
@@ -517,7 +517,7 @@ function openTurnIntoTasksSheet(note) {
   const foot = node("div", "sheet-foot");
   const cancelBtn = node("button", "btn ghost", "Cancel");
   cancelBtn.type = "button";
-  const createBtn = node("button", "btn primary", "만들기");
+  const createBtn = node("button", "btn primary", "Create");
   createBtn.type = "button";
   foot.append(cancelBtn, createBtn);
 
@@ -600,7 +600,7 @@ function openRowMenu(task, { context, tierList }) {
     body.appendChild(menuItemButton("Archive to Done", act(() => completeTask(task))));
   }
   if (context !== "done") {
-    body.appendChild(menuItemButton("종류 바꾸기", act(() => openKindSheet(task))));
+    body.appendChild(menuItemButton("Change type", act(() => openKindSheet(task))));
   }
   if (context !== "done" && kind === "note") {
     body.appendChild(menuItemButton("Turn into tasks", act(() => openTurnIntoTasksSheet(task))));
