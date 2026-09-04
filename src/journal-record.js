@@ -5,7 +5,7 @@
 // projected — that is what keeps a scheduledFor from acting like a deadline
 // anywhere, including in Daybook.
 
-const DEFAULT_ANCHOR_MINUTES = 540; // 09:00, used when no specific time was parsed
+const DEFAULT_ANCHOR_MINUTES = 0; // 00:00, used when no specific time was parsed (all-day placeholder)
 
 function pad(value) {
   return String(Math.abs(value)).padStart(2, "0");
@@ -58,6 +58,7 @@ export function taskToJournalRecord(task, options = {}) {
     data: {
       type: task.type === "note" || task.type === "event" ? task.type : "task",
       done: task.status === "done",
+      hasTime: Number.isFinite(task.scheduledAtMinutes),
       subtaskCount: subtasks.length,
       subtaskDoneCount: subtasks.filter((s) => s.done).length,
       contentIncluded: includeContent,

@@ -645,15 +645,16 @@ function openRowMenu(task, { context, tierList }) {
 }
 
 function formatClock(minutes) {
-  if (!Number.isFinite(minutes)) return "";
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  const m = Number.isFinite(minutes) ? minutes : 0;
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  return `${String(h).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
 }
 
 // Note has no checkbox (plan §1.3/§3-6) — a plain dash marker instead, kept
-// even after archiving to Done. Event shows a time badge in place of the
-// checkbox when it has a scheduledAtMinutes; otherwise it behaves like a task.
+// even after archiving to Done. Event always shows a time badge in place of
+// the checkbox: its scheduledAtMinutes when set, otherwise 00:00 as the
+// all-day placeholder (e.g. a birthday with no set time).
 function taskRow(task, { context, tierList = [] }) {
   const wrap = node("div");
   const kind = taskType(task);
@@ -661,7 +662,7 @@ function taskRow(task, { context, tierList = [] }) {
 
   if (kind === "note") {
     row.appendChild(node("span", "kind-mark", "—"));
-  } else if (kind === "event" && Number.isFinite(task.scheduledAtMinutes)) {
+  } else if (kind === "event") {
     const badge = node("span", "kind-mark time-badge", formatClock(task.scheduledAtMinutes));
     badge.setAttribute("aria-label", `Scheduled ${formatClock(task.scheduledAtMinutes)}`);
     row.appendChild(badge);

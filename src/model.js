@@ -186,14 +186,15 @@ export function migrateOrder(tasks) {
 
 // ---------- Today 3-tier sort (plan §3-2) ----------
 //
-// Event (ascending scheduledAtMinutes, no value sorts last) -> Task (ascending
-// order) -> Note (ascending order). Returns rows tagged with a `tier` index
-// (0/1/2) so the UI can draw a subtle divider between tiers.
+// Event (ascending scheduledAtMinutes, no value treated as 00:00/midnight so
+// all-day events lead the list) -> Task (ascending order) -> Note (ascending
+// order). Returns rows tagged with a `tier` index (0/1/2) so the UI can draw
+// a subtle divider between tiers.
 export function todayTierGroups(tasks) {
   const events = tasks.filter((t) => taskType(t) === "event")
     .sort((a, b) => {
-      const av = Number.isFinite(a.scheduledAtMinutes) ? a.scheduledAtMinutes : Infinity;
-      const bv = Number.isFinite(b.scheduledAtMinutes) ? b.scheduledAtMinutes : Infinity;
+      const av = Number.isFinite(a.scheduledAtMinutes) ? a.scheduledAtMinutes : 0;
+      const bv = Number.isFinite(b.scheduledAtMinutes) ? b.scheduledAtMinutes : 0;
       return av - bv;
     });
   const byOrder = (a, b) => (a.order ?? 0) - (b.order ?? 0);

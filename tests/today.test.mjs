@@ -139,7 +139,7 @@ test('migrateOrder assigns order by ascending createdAt, separately per status b
   assert.equal(changed.find((t) => t.title === 'd'), undefined, 'already-ordered records are left alone');
 });
 
-test('todayTierGroups splits Event/Task/Note and sorts events by scheduledAtMinutes (no value last)', () => {
+test('todayTierGroups splits Event/Task/Note and sorts events by scheduledAtMinutes (no value treated as 00:00, sorts first)', () => {
   const tasks = [
     model.normalizeTask({ title: 'note1', type: 'note', status: 'today', todayDate: '2026-08-26', order: 1 }),
     model.normalizeTask({ title: 'ev-late', type: 'event', status: 'today', todayDate: '2026-08-26', scheduledAtMinutes: 900 }),
@@ -148,7 +148,7 @@ test('todayTierGroups splits Event/Task/Note and sorts events by scheduledAtMinu
     model.normalizeTask({ title: 'task1', type: 'task', status: 'today', todayDate: '2026-08-26', order: 0 }),
   ];
   const groups = model.todayTierGroups(tasks);
-  assert.deepEqual(groups.events.map((t) => t.title), ['ev-early', 'ev-late', 'ev-no-time']);
+  assert.deepEqual(groups.events.map((t) => t.title), ['ev-no-time', 'ev-early', 'ev-late']);
   assert.deepEqual(groups.tasks.map((t) => t.title), ['task1']);
   assert.deepEqual(groups.notes.map((t) => t.title), ['note1']);
 });
@@ -221,7 +221,7 @@ test('migrateOrder is a no-op for records that already have an order', () => {
   assert.deepEqual(model.migrateOrder(tasks), []);
 });
 
-test('sortTodayTiers puts events first (by scheduledAtMinutes, no-value last), then tasks, then notes, each by order', () => {
+test('sortTodayTiers puts events first (by scheduledAtMinutes, no-value treated as 00:00), then tasks, then notes, each by order', () => {
   const tasks = [
     model.normalizeTask({ title: 'note1', type: 'note', status: 'today', todayDate: '2026-08-26', order: 1 }),
     model.normalizeTask({ title: 'task1', type: 'task', status: 'today', todayDate: '2026-08-26', order: 1 }),
@@ -230,7 +230,7 @@ test('sortTodayTiers puts events first (by scheduledAtMinutes, no-value last), t
     model.normalizeTask({ title: 'event-9am', type: 'event', status: 'today', todayDate: '2026-08-26', scheduledAtMinutes: 540 }),
   ];
   const sorted = model.sortTodayTiers(tasks).map((r) => r.task.title);
-  assert.deepEqual(sorted, ['event-9am', 'event-no-time', 'task0', 'task1', 'note1']);
+  assert.deepEqual(sorted, ['event-no-time', 'event-9am', 'task0', 'task1', 'note1']);
 });
 
 test('autoPromoteEvents only promotes Someday events scheduled for today, never tasks or notes', () => {
