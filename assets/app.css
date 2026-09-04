@@ -161,8 +161,8 @@ a { color: inherit; }
 }
 .task-row.type-event .kind-mark.time-badge {
   font-size: calc(var(--f) * 0.82); font-weight: 700; color: var(--on-accent);
-  background: var(--accent-tint); border-radius: 8px; width: auto; min-width: 44px;
-  padding: 0 6px; height: 26px;
+  background: var(--accent-tint); border-radius: 8px; width: auto; min-width: 0;
+  padding: 0 6px; height: 26px; min-height: 0; margin: 0; align-self: center;
 }
 
 /* ---------- Today 3-tier divider (plan §3-2) ---------- */

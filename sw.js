@@ -1,5 +1,5 @@
 // Keep VERSION in step with APP_BUILD in ./src/version.js.
-const VERSION = "2026.09.03-notezoom1";
+const VERSION = "2026.09.04-eventbadge1";
 const CACHE_NAME = `today-${VERSION}`;
 
 const APP_SHELL = [
