@@ -31,14 +31,15 @@ export function openDB() {
     request.onsuccess = () => {
       dbFailed = false;
       const db = request.result;
-      db.onversionchange = () => db.close();
+      db.onversionchange = () => { db.close(); dbPromise = null; };
+      db.onclose = () => { dbPromise = null; };
       resolve(db);
     };
     request.onerror = () => {
       dbFailed = true;
       reject(request.error || new Error("Failed to open IndexedDB"));
     };
-  });
+  }).catch(error => { dbPromise = null; throw error; });
   return dbPromise;
 }
 
@@ -52,7 +53,14 @@ function tx(db, storeName, mode) {
 
 function reqToPromise(req) {
   return new Promise((resolve, reject) => {
-    req.onsuccess = () => resolve(req.result);
+    if (req.transaction?.mode === "readwrite") {
+      const transaction = req.transaction;
+      transaction.oncomplete = () => resolve(req.result);
+      transaction.onabort = () => reject(transaction.error || new Error("Task save was cancelled"));
+      transaction.onerror = () => reject(transaction.error || new Error("Couldn't save tasks"));
+    } else {
+      req.onsuccess = () => resolve(req.result);
+    }
     req.onerror = () => reject(req.error);
   });
 }
