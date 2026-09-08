@@ -83,3 +83,15 @@ test('revision equality ignores JSON key order but immutable identity metadata c
   assert.throws(() => mergeEntries([first, {...next,bucket:'2026-08'}]), /metadata/);
   assert.throws(() => mergeEntries([first, {...first,title:'different'}]), /same revision/);
 });
+
+test('explicit AM/PM selection overrides the existing suffix', () => {
+  assert.equal(parseClock('8:10 AM', 'PM'),1210);
+  assert.equal(parseClock('8:10 PM', 'AM'),490);
+});
+test('DST repeated times sort by their actual instants and both show offsets in Markdown', () => {
+  const make = startedAt => reviseEntry({title:'활동',timeZone:zone,startedAt},null,{now});
+  const first=make('2025-11-02T01:50:00-05:00'),second=make('2025-11-02T01:10:00-06:00');
+  const md=timelineMarkdown([second,first],'2025-11-02');
+  assert.ok(md.indexOf('01:50 AM')<md.indexOf('01:10 AM'));
+  assert.match(md,/UTC-05:00/);assert.match(md,/UTC-06:00/);
+});

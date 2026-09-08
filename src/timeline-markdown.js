@@ -1,5 +1,5 @@
 import { dayEntries } from './timeline-model.js';
-import { formatClock, dayDifference } from './timeline-time.js';
+import { formatClock, dayDifference, simpleDay } from './timeline-time.js';
 const mdText = text => text.replace(/([\\`*_[\]{}<>~])/g, '\\$1');
 export function timeLabel(entry, { offsets = false } = {}) {
   const differing = entry.endedAt && entry.startedAt.slice(-6) !== entry.endedAt.slice(-6);
@@ -15,5 +15,5 @@ export function timeLabel(entry, { offsets = false } = {}) {
 export function timelineMarkdown(entries, date) {
   const rows = dayEntries(entries, date);
   const base = [...rows].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))[0]?.timeZone;
-  return rows.map(r => `${timeLabel(r, { offsets: r.timeZone !== base })}${r.title ? ` ${mdText(r.title)}` : ''}`).join('  \n') + (rows.length ? '\n' : '');
+  return rows.map(r => `${timeLabel(r, { offsets: !simpleDay(date, rows) || r.timeZone !== base })}${r.title ? ` ${mdText(r.title)}` : ''}`).join('  \n') + (rows.length ? '\n' : '');
 }

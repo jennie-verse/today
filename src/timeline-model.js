@@ -37,7 +37,7 @@ export function reviseEntry(draft, previous = null, { now = Date.now(), known = 
   return result;
 }
 export const compareRevision = (a, b) => Date.parse(a.updatedAt) - Date.parse(b.updatedAt) || a.revisionId.localeCompare(b.revisionId);
-export const sortEntries = entries => [...entries].sort((a, b) => a.startedAt.slice(11, 16).localeCompare(b.startedAt.slice(11, 16)) || Date.parse(a.startedAt) - Date.parse(b.startedAt) || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+export const sortEntries = entries => [...entries].sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt) || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
 export function dayEntries(entries, date) {
   return sortEntries(entries.filter(r => !r.deletedAt && r.startDate === date));
 }

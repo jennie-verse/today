@@ -85,3 +85,12 @@
 재현: `npm test`, `npm run test:syntax`. 브라우저 회귀는 Published를 포트 8837로 정적 제공하고 `PLAYWRIGHT_PATH`에 Playwright 패키지 경로를 지정한 뒤 `node tests/timeline-browser.cjs`, `node tests/timeline-offline.cjs`를 실행합니다. `TODAY_TEST_URL`로 테스트 서버 주소를 지정할 수 있습니다. 브라우저 스크립트는 테스트 데이터만 사용하는 환경에서 실행합니다.
 
 미검증: 실제 iPhone/iPad Safari·홈 화면 설치 업데이트·사용자 비공개 GitHub 토큰으로의 실계정 동기화. WebKit 바이너리는 이 환경에 설치되어 있지 않습니다. 실제 공개 배포 결과는 작업 공간의 Plan/today_timeline-plan/Release_Report.md에 기록합니다.
+
+## 2026-09-08 일관성·사용성 재검토
+
+빌드 `2026.09.08-consistency1`.
+
+- 시작 시각의 실제 instant 순서로 Timeline과 Markdown을 정렬해 DST 반복 시각이 시계 표시 순서 때문에 뒤바뀌지 않는다. 해당 날짜 Markdown에는 양쪽 UTC 오프셋을 표시한다.
+- 상세 편집의 AM/PM 선택이 입력 문자열의 기존 접미사를 명시적으로 바꾸며, 빈 제목·종료 추가/삭제·삭제 중 중복 제출 방지 흐름을 다시 확인했다.
+- Node 테스트 65개와 JavaScript 문법 검사 통과. 격리 Chromium에서 동기화·백업·복원·충돌·반응형 회귀, AM/PM 변경, 6단계 글자 크기와 가로 넘침, Service Worker 오프라인 재실행을 확인했다. 페이지 오류는 없었다.
+- Browser plugin not available; bundled Playwright Chromium을 사용했다. 실제 iPhone/iPad Safari 및 실계정 동기화는 미검증이다.

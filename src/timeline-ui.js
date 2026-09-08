@@ -198,7 +198,7 @@ export async function initTimeline({ onTasksVisible = () => {} } = {}) {
     const startRow = el('div', 'timeline-fields'); startRow.append(field('startDate', 'Start date', draft.startDate || entry?.startDate || state.date, 'date'), field('startTime', 'Start time', draft.startText || (entry ? formatClock(entry.startedAt) : formatClock(now))));
     const endRow = el('div', 'timeline-fields'); endRow.append(field('endDate', 'End date', draft.endDate || entry?.endDate || entry?.startDate || state.date, 'date'), field('endTime', 'End time (optional)', draft.endText ?? (entry?.endedAt ? formatClock(entry.endedAt) : '')));
     const timeOptions = el('div', 'timeline-fields');
-    function period(label, key) { const wrap = el('label', 'timeline-field', label); const select = el('select'); select.setAttribute('aria-label', label); for (const v of ['', 'AM', 'PM']) { const opt = el('option', '', v || 'In the time above'); opt.value = v; select.append(opt); } fields[key] = select; wrap.append(select); return wrap; }
+    function period(label, key) { const wrap = el('label', 'timeline-field', label); const select = el('select'); select.setAttribute('aria-label', label); for (const v of ['', 'AM', 'PM']) { const opt = el('option', '', v || 'In the time above'); opt.value = v; select.append(opt); } fields[key] = select; select.addEventListener('change', () => { const time = fields[key === 'startPeriod' ? 'startTime' : 'endTime']; if (select.value && /(?:am|pm)$/i.test(time.value.trim())) time.value = time.value.trim().replace(/(?:am|pm)$/i, select.value); }); wrap.append(select); return wrap; }
     timeOptions.append(period('Start AM/PM', 'startPeriod'), period('End AM/PM', 'endPeriod'));
     const currentLabel = el('label', 'timeline-check'); const isRunning = el('input'); isRunning.type = 'checkbox'; isRunning.checked = draft.isRunning ?? entry?.isRunning ?? false; currentLabel.append(isRunning, el('span', '', 'Current activity (no end time)'));
     const shortcuts = el('div', 'timeline-actions');
@@ -234,8 +234,12 @@ export async function initTimeline({ onTasksVisible = () => {} } = {}) {
     }
     modal.foot.append(button('Cancel', () => { if (!busy) modal.close(); }, 'btn ghost'), switchButton, saveButton);
     if (entry) modal.foot.prepend(button('Delete', async () => {
+      if (busy || composing) return; busy = true; modal.box.dataset.busy = 'true';
+      try {
       const deleted = await saveEntry({ ...entry, deletedAt: new Date().toISOString(), isRunning: false }, { expectedRevision: entry.revisionId, allowFuture: true, resolve: resolving });
       modal.close(); await refresh(); undoToast('Activity deleted', { onUndo: async () => { try { await saveEntry({ ...entry, deletedAt: null }, { expectedRevision: deleted.revisionId, allowFuture: true }); } catch (e) { toast(e.message); } } });
+      } catch (e) { error.textContent = e.message; }
+      finally { busy = false; modal.box.dataset.busy = 'false'; }
     }, 'btn danger'));
     modal.box.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.tagName === 'INPUT' && !composing && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); submit(false); } });
     modal.box.showModal(); (focusEnd ? fields.endTime : fields.title).focus();

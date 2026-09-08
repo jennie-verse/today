@@ -424,3 +424,6 @@ input[type="text"], input[type="password"], input[type="date"], input[type="time
   .timeline-current { max-height: 90px; }
 }
 @media (max-width: 360px) { .timeline-fields { flex-direction: column; gap: 0; } .timeline-toolbar { gap: 0; } }
+
+.timeline-panel .btn,.timeline-panel .chip,.timeline-dialog .btn{min-width:44px}
+@media(max-height:540px) and (max-width:430px){.timeline-composer{display:block}.timeline-composer .timeline-actions{margin-top:5px}.timeline-current{max-height:64px}}

@@ -41,7 +41,7 @@ export function formatClock(value) {
 export function parseClock(text, period = '') {
   const match = /^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i.exec(String(text).trim());
   if (!match) throw new Error('Use a time such as 8:10 AM.');
-  const hour = Number(match[1]), minute = Number(match[2] || 0), meridiem = (match[3] || period).toUpperCase();
+  const hour = Number(match[1]), minute = Number(match[2] || 0), meridiem = (period || match[3] || '').toUpperCase();
   if (minute > 59) throw new Error('Minutes must be between 00 and 59.');
   if (meridiem) {
     if (!['AM', 'PM'].includes(meridiem) || hour < 1 || hour > 12) throw new Error('AM/PM hours must be between 1 and 12.');
