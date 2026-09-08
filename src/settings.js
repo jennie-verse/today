@@ -8,6 +8,7 @@ import { confirmDialog, toast } from "./ui.js";
 import * as sync from "./sync.js";
 import * as syncRunner from "./sync-runner.js";
 import * as journal from "./journal.js";
+import { resetData, recoverRestore } from './data-transfer.js';
 import { APP_BUILD } from "./version.js";
 
 function fmtWhen(ms) {
@@ -28,7 +29,7 @@ function buildSyncSection(sec) {
 
   const intro = document.createElement("p");
   intro.className = "hint";
-  intro.textContent = "Off by default. Everything works without it — sync only adds a copy of Today, Someday, and Done tasks in your private webapp-data repository so other devices (and Journal) can use them.";
+  intro.textContent = "Off by default. Tasks and timeline records are copied to your private webapp-data repository. Everything works locally without sync. Timeline Markdown is available directly in the Timeline tab.";
   sec.appendChild(intro);
 
   const nameRow = document.createElement("div");
@@ -231,7 +232,7 @@ function buildJournalSection(sec, syncSection) {
   const clearActivityBtn = document.createElement("button");
   clearActivityBtn.type = "button";
   clearActivityBtn.className = "btn";
-  clearActivityBtn.textContent = "Clear captured activity";
+  clearActivityBtn.textContent = "Clear captured task history";
   clearActivityRow.appendChild(clearActivityBtn);
   sec.appendChild(clearActivityRow);
 
@@ -278,7 +279,7 @@ function buildJournalSection(sec, syncSection) {
 
   clearActivityBtn.addEventListener("click", async () => {
     const ok = await confirmDialog({
-      title: "Clear captured activity?",
+      title: "Clear captured task history?",
       message: "This clears Today's 90-day local activity history on this device. Tasks and remote Journal records are unchanged.",
       confirmLabel: "Clear activity",
     });
@@ -374,7 +375,7 @@ export function openSettingsSheet({ onChanged }) {
   backupRow.style.marginTop = "8px";
   const exportBtn = document.createElement("button");
   exportBtn.type = "button"; exportBtn.className = "btn"; exportBtn.style.flex = "1"; exportBtn.textContent = "Export JSON";
-  exportBtn.addEventListener("click", async () => { await exportBackup(); settings = store.getSettings(); lastBackupP.textContent = "Last backup: 0 days ago"; });
+  exportBtn.addEventListener("click", async () => { try { await exportBackup(); settings = store.getSettings(); lastBackupP.textContent = "Last backup: 0 days ago"; } catch (error) { toast(error.message); } });
   const importBtn = document.createElement("button");
   importBtn.type = "button"; importBtn.className = "btn"; importBtn.style.flex = "1"; importBtn.textContent = "Import JSON";
   importBtn.addEventListener("click", async () => {
@@ -384,6 +385,9 @@ export function openSettingsSheet({ onChanged }) {
   });
   backupRow.append(exportBtn, importBtn);
   backupSec.appendChild(backupRow);
+  const retryRestore = document.createElement('button'); retryRestore.type = 'button'; retryRestore.className = 'btn'; retryRestore.textContent = 'Retry restore';
+  retryRestore.addEventListener('click', async () => { try { await recoverRestore(); toast('Restore recovery complete'); onChanged(store.getSettings()); } catch (error) { toast(error.message); } });
+  backupSec.appendChild(retryRestore);
 
   const aboutSec = section("About");
   const buildP = document.createElement("p");
@@ -398,9 +402,10 @@ export function openSettingsSheet({ onChanged }) {
   const resetBtn = document.createElement("button");
   resetBtn.type = "button"; resetBtn.className = "btn danger"; resetBtn.textContent = "Reset";
   resetBtn.addEventListener("click", async () => {
-    const ok = await confirmDialog({ title: "Reset everything?", message: "All tasks and settings on this device will be permanently removed.", confirmLabel: "Reset everything", danger: true });
+    const ok = await confirmDialog({ title: "Reset everything?", message: "Tasks, timeline records, captured task history and display settings will be removed. Synced deletions also reach your other devices. Tokens are managed separately.", confirmLabel: "Reset everything", danger: true });
     if (!ok) return;
-    await store.clearAllTasks();
+    try { const result = await resetData(); if (result.pending) { toast('Records cleared; task-history recovery pending. Retry in Settings.'); return; } }
+    catch (error) { toast(error.message); return; }
     settings = store.resetSettings();
     closeSheet();
     onChanged(settings);

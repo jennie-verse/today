@@ -4,7 +4,7 @@
 import { DEFAULT_SETTINGS } from "./model.js";
 
 const DB_NAME = "today-db";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const SETTINGS_KEY = "today.settings.v1";
 
 let dbPromise = null;
@@ -14,6 +14,7 @@ export function openDB() {
   if (dbPromise) return dbPromise;
   dbPromise = new Promise((resolve, reject) => {
     let request;
+    let blocked = false;
     try {
       request = indexedDB.open(DB_NAME, DB_VERSION);
     } catch (err) {
@@ -27,8 +28,22 @@ export function openDB() {
         const store = db.createObjectStore("tasks", { keyPath: "id" });
         store.createIndex("status", "status", { unique: false });
       }
+      if (!db.objectStoreNames.contains("timelineEntries")) {
+        const entries = db.createObjectStore("timelineEntries", { keyPath: "id" });
+        for (const key of ["startDate", "endDate", "bucket", "runningKey"]) entries.createIndex(key, key);
+      }
+      if (!db.objectStoreNames.contains("timelineMeta")) db.createObjectStore("timelineMeta", { keyPath: "key" });
+      if (!db.objectStoreNames.contains("timelineConflicts")) {
+        const conflicts = db.createObjectStore("timelineConflicts", { keyPath: "revisionId" });
+        conflicts.createIndex("entryId", "id");
+      }
+    };
+    request.onblocked = () => {
+      blocked = true;
+      reject(new Error("Close other Today tabs, then reload to finish the update. Your data is kept."));
     };
     request.onsuccess = () => {
+      if (blocked) { request.result.close(); return; }
       dbFailed = false;
       const db = request.result;
       db.onversionchange = () => { db.close(); dbPromise = null; };
@@ -87,7 +102,7 @@ export async function withoutTaskHook(fn) {
   finally { hookSuppressed = false; }
 }
 
-function notifyTaskChange(next, previous) {
+export function notifyTaskChange(next, previous) {
   if (hookSuppressed) return;
   if (syncTaskChangeHook) { try { syncTaskChangeHook(next, previous); } catch { /* sync never blocks a local save */ } }
   if (journalTaskChangeHook) { try { journalTaskChangeHook(next, previous); } catch { /* journal-only, must not break saves */ } }

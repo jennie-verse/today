@@ -2,7 +2,7 @@
 
 ## 무엇인지
 
-Today는 오늘 할 일을 **3개까지만** 담는 로컬 우선 개인용 웹앱입니다. 어제 못 한 항목은 자동으로 오늘로 넘어오지 않고, 밀린 개수·달성률·연속 기록 숫자를 화면에 띄우지 않습니다. 제약 자체가 기능입니다. 오프라인에서도 완전히 동작하며, 선택적으로 비공개 `webapp-data` 저장소를 통해 기기 간 동기화할 수 있습니다.
+Today는 할 일과 하루의 실제 활동을 기록하는 로컬 우선 웹앱입니다. 할 일 개수 제한은 없고 미완료 Today 항목은 다음 날로 이어집니다. Timeline은 별도의 활동 모델로 시각·구간·현재 활동과 Markdown 출력을 제공합니다.
 
 저장소·배포 주소: `github.com/jennie-verse/today` → `https://jennie-verse.github.io/today/`
 
@@ -19,7 +19,7 @@ today/
 │  └─ fonts/                  Lexend 400·700 (오프라인 동봉)
 ├─ src/
 │  ├─ version.js               APP_BUILD — sw.js의 VERSION과 반드시 같아야 함
-│  ├─ model.js                 항목 검증, 3칸 규칙, Someday/Done/후보 분류, 자정 이후 되돌리기
+│  ├─ model.js                 항목 검증, Someday/Done/후보 분류, 미완료 이월
 │  ├─ nlp-date.js              자연어 날짜·시각 파서 (정규식만, AI 없음)
 │  ├─ store.js                 IndexedDB(`today-db`) 저장, localStorage 설정
 │  ├─ sync.js                  webapp-data 기기 간 동기화(2026-08-26 추가, 기본 꺼짐) + Journal 인증용 device name/token
@@ -43,7 +43,7 @@ today/
 |---|---|
 | 앱 이름 | `index.html`의 `<title>`, `manifest.webmanifest`의 `name`/`short_name` |
 | 대표색 | `assets/app.css` 맨 위 `:root` 안의 `--accent` 등 변수 |
-| 오늘 칸 개수(3), 하위 단계 상한(5) | `src/model.js`의 `TODAY_SLOTS`, `MAX_SUBTASKS` |
+| 할 일 분류·하위 단계 규칙 | `src/model.js` |
 | 자연어 파서가 인식하는 표현 | `src/nlp-date.js` |
 | 아이콘 | `icons/` 폴더 (`icons/icon-source.svg`가 원본) |
 
@@ -71,15 +71,13 @@ today는 비공개 저장소 `webapp-data`와 loom·tide·folio가 이미 쓰는
 - **켜는 순서**: Settings → Sync에서 Device name(영문+숫자)을 먼저 적고, Access token을 저장한 뒤 **Sync this device**를 켭니다. Journal과 컨텍스트 ID를 공유하므로, Journal을 먼저 켰다면 같은 기기 이름이 이어집니다.
 - **기본값**: 다른 모든 앱과 동일하게 **꺼짐**입니다.
 
-## 설계 원칙 — 코드를 고칠 때도 지켜야 함
+## 설계 원칙
 
-1. **오늘 칸은 3개 고정.** `model.js`의 `TODAY_SLOTS`를 늘리는 것은 계획에 없는 변경입니다.
-2. **자동 이월 금지.** `reconcileToday()`가 매 실행 시 어제 남은 Today 항목을 조용히 Someday로 되돌립니다. 이 로직을 "다시 Today에 넣어주는" 방향으로 바꾸면 안 됩니다.
-3. **예정일(scheduledFor)은 마감일이 아닙니다.** 지난 예정일에 색을 바꾸거나 경고를 넣지 마세요. 예정일이 오늘이어도 자동으로 Today 3칸에 넣지 마세요 — "오늘 후보"에만 노출합니다.
-4. **자연어 파서는 반복 표현을 일부러 인식하지 않습니다.** `매주`/`매일`/`every` 뒤에 오는 날짜 단어는 건너뜁니다.
-5. **`sw.js`의 `VERSION`과 `src/version.js`의 `APP_BUILD`는 항상 같은 값이어야 합니다.**
-6. **`shared/v2/journal.js`는 additive로만 확장합니다.** `today` 앱과 `task`/`task-activity` kind를 shared 저장소에 이미 등록했습니다 (v3로 올리지 않음).
-7. **동기화가 3칸 고정·자동 이월 금지 원칙을 흔들면 안 됩니다.** 두 기기의 변경이 합쳐져 3개를 넘으면 첫 3개만 고정 슬롯에 두고, 초과분은 `Needs review`에 전부 노출합니다. 자동 삭제·자동 이동은 하지 않습니다.
+1. 기존 할 일 무제한·미완료 이월·당일 Event 승격을 유지합니다.
+2. 실제 활동과 Task 예정 시각을 혼합하지 않습니다.
+3. 저장 성공은 IndexedDB 트랜잭션 완료 후에만 표시합니다.
+4. `sw.js` VERSION과 `src/version.js` APP_BUILD를 함께 올립니다.
+5. Timeline의 동시 수정본은 보존하며 명시적으로 해결합니다.
 
 현재 저장소가 직접 소유하는 `tests/today.test.mjs`가 model·파서·Journal 레코드 경계를 확인합니다. `npm test`로 재실행합니다.
 
@@ -95,4 +93,16 @@ today는 비공개 저장소 `webapp-data`와 loom·tide·folio가 이미 쓰는
   자체는 아직 손대지 않음.
 - `src/model.js`의 `source` 허용값에 `"clip"` 추가(`"tide"`는 계속 유효), `?add=` intake가 `?from=clip`도
   `?from=tide`와 같은 방식으로 인식 — clip 앱 자체는 아직 없어 지금은 비활성 상태.
-- 새 코드도 전부 `textContent`만 사용, `innerHTML` 없음. IndexedDB 스키마 버전 변경 없음(추가 필드만).
+- 새 코드도 전부 `textContent`만 사용, `innerHTML` 없음. Timeline 도입으로 IndexedDB는 v2이며 기존 tasks는 보존합니다.
+
+## Timeline 구현 (2026.09.08-timeline1)
+
+- `timeline-time.js`: AM/PM 파서, 시간대·DST 검증.
+- `timeline-model.js`: 동일 ID 수정, revision 및 supersedes 인과 관계, 동시 수정 보존.
+- `timeline-store.js`: IndexedDB v2의 timelineEntries / timelineConflicts / timelineMeta, 원자적 현재 활동 전환, 변경 토큰.
+- `timeline-ui.js`: 입력·편집·날짜 탐색·타임테이블·목록·충돌 검토·내보내기.
+- `timeline-markdown.js`: 양쪽 AM/PM, 빈 제목, 날짜 경계, Markdown 이스케이프.
+- `timeline-sync.js`: `today/timeline/YYYY-MM/data.<기기>.json`; 생성 월 bucket 고정, SHA 재시도 시 다시 병합, 전송 중 새 변경 보존.
+- `data-transfer.js`: 일관된 v2 백업과 복원·재시도. IDB 변경과 localStorage 이력 사이에 복원 대기 메타데이터를 저장합니다.
+
+Timeline 파일은 기존 Task 동기화 파일과 분리됩니다. 파싱 실패·용량 초과를 빈 데이터로 덮어쓰지 않습니다. 오래된 기기가 Timeline 필드를 잃게 만들지 않으며, 양쪽 기기는 업데이트해야 Timeline을 볼 수 있습니다. 삭제 레코드와 revision 계보는 안전한 합의된 정리 기능이 생기기 전까지 유지합니다.

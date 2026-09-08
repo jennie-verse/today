@@ -3,26 +3,18 @@
 import * as store from "./store.js";
 import { pad2, STATUSES, TYPES } from "./model.js";
 import { toast, undoToast, confirmDialog } from "./ui.js";
-import { exportActivityLedger, replaceActivityLedger } from "./journal.js";
+import { exportData, restoreData } from './data-transfer.js';
+import { validateCollection } from './timeline-model.js';
 
 const FORMAT = "today-backup";
-const VERSION = 1;
+const VERSION = 2;
 
 function backupFilename() {
   const d = new Date();
   return `today-backup-${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}.json`;
 }
 
-export async function buildBackupPayload() {
-  const tasks = await store.getAllTasks();
-  return {
-    format: FORMAT,
-    version: VERSION,
-    exportedAt: new Date().toISOString(),
-    tasks,
-    journalActivity: exportActivityLedger(),
-  };
-}
+export async function buildBackupPayload() { return exportData(); }
 
 export async function exportBackup() {
   const payload = await buildBackupPayload();
@@ -51,7 +43,7 @@ function validDate(value) {
 export function validatePayload(data) {
   if (!data || typeof data !== "object" || Array.isArray(data)) return "Not a valid JSON object.";
   if (data.format !== FORMAT) return "This file isn't a Today backup.";
-  if (data.version !== VERSION) return "This backup version isn't supported by Today.";
+  if (![1, VERSION].includes(data.version)) return "This backup version isn't supported by Today.";
   if (!Array.isArray(data.tasks)) return "Backup is missing task data.";
   const ids = new Set();
   for (const [index, task] of data.tasks.entries()) {
@@ -77,7 +69,11 @@ export function validatePayload(data) {
       }
     }
   }
-  if (data.journalActivity != null && !Array.isArray(data.journalActivity)) return "Backup journal data is invalid.";
+  if (data.journalActivity != null && (!Array.isArray(data.journalActivity) || data.journalActivity.some(r => !r || typeof r.taskId !== 'string' || !validDate(r.date) || !r.date || !Array.isArray(r.actions) || !Number.isFinite(Date.parse(r.firstAt)) || !Number.isFinite(Date.parse(r.lastAt))))) return "Backup journal data is invalid.";
+  if (data.version === 2) {
+    try { validateCollection(data.timelineEntries); validateCollection(data.timelineConflicts, { uniqueIds: false }); }
+    catch (error) { return `Invalid timeline backup: ${error.message}`; }
+  }
   return null;
 }
 
@@ -106,59 +102,22 @@ export async function importBackup(file, { onDone } = {}) {
   const mode = await pickImportMode();
   if (!mode) return;
 
-  if (mode === "replace") {
-    const ok = await confirmDialog({
-      title: "Replace all data?",
-      message: "This removes every task currently on this device.",
-      confirmLabel: "Replace all",
-      danger: true,
-    });
+  if (mode === 'replace') {
+    const ok = await confirmDialog({ title: 'Replace backup data?',
+      message: data.version === 1 ? 'Replace tasks from this older backup. Timeline records will be kept.' : 'Replace tasks and timeline records from this backup. Synced deletions also reach your other devices.',
+      confirmLabel: 'Replace', danger: true });
     if (!ok) return;
-    const prevTasks = await store.getAllTasks();
-    const prevJournalActivity = exportActivityLedger();
-    try {
-      await store.bulkPutTasks(data.tasks, { replace: true, notify: true });
-    } catch {
-      toast("Couldn't restore the backup. Your existing tasks were kept.");
-      return;
-    }
-    if (Array.isArray(data.journalActivity)) replaceActivityLedger(data.journalActivity);
-    undoToast(`Replaced with backup (${data.tasks.length} tasks)`, {
+  }
+  try {
+    const result = await restoreData(data, { replace: mode === 'replace' });
+    undoToast(result.pending ? 'Records restored; task-history recovery pending. Retry in Settings.' : 'Backup imported', {
       onUndo: async () => {
-        try {
-          await store.bulkPutTasks(prevTasks, { replace: true, notify: true });
-        } catch {
-          toast("Couldn't undo the import. Please try restoring your backup again.");
-          return;
-        }
-        replaceActivityLedger(prevJournalActivity);
-        if (onDone) onDone();
+        try { await restoreData(result.previous, { replace: true, expectedSignature: result.signature }); if (onDone) onDone(); }
+        catch (error) { toast(error.message); }
       },
     });
     if (onDone) onDone();
-    return;
-  }
-
-  // merge — newer updatedAt wins on id conflicts
-  let added = 0, updated = 0, skipped = 0;
-  const existing = await store.getAllTasks();
-  const byId = new Map(existing.map((t) => [t.id, t]));
-  const toWrite = [];
-  for (const incoming of data.tasks) {
-    const current = byId.get(incoming.id);
-    if (!current) { toWrite.push(incoming); added += 1; }
-    else if (new Date(incoming.updatedAt) > new Date(current.updatedAt)) { toWrite.push(incoming); updated += 1; }
-    else skipped += 1;
-  }
-  try {
-    await store.bulkPutTasks(toWrite, { notify: true });
-  } catch {
-    toast("Couldn't merge the backup. Your existing tasks were kept.");
-    return;
-  }
-  if (Array.isArray(data.journalActivity)) replaceActivityLedger(data.journalActivity, { merge: true });
-  toast(`Merged — added ${added} · updated ${updated} · skipped ${skipped}`);
-  if (onDone) onDone();
+  } catch (error) { toast(error.message || 'Could not import. Existing records were kept.'); }
 }
 
 function pickImportMode() {

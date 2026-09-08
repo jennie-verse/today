@@ -104,7 +104,7 @@ export function replaceActivityLedger(rows, { merge = false } = {}) {
       };
     }
   }
-  writeItem(ACTIVITY_KEY, JSON.stringify(entries));
+  localStorage.setItem(ACTIVITY_KEY, JSON.stringify(entries));
   return entries;
 }
 export function clearActivityLedger() { try { localStorage.removeItem(ACTIVITY_KEY); return true; } catch { return false; } }
@@ -230,4 +230,23 @@ export async function refreshJournalState() {
   const client = await getClient();
   if (client) { try { publish({ pendingCount: await client.pendingCount() }); } catch { /* retain safe count */ } }
   return getJournalState();
+}
+
+// Restore changes projections without fabricating new user activity ledger rows.
+export async function projectRestoredTasks(tasks, previous) {
+  if (!isJournalEnabled()) return;
+  const client = await getClient();
+  if (!client) { publish({ status: 'error', errorCode: 'MODULE_UNAVAILABLE' }); return; }
+  const nextIds = new Set(tasks.map(r => r.id));
+  try {
+    for (const row of previous) {
+      const date = journalDateFor(row);
+      if (date && !nextIds.has(row.id)) await client.enqueue(taskToJournalRecord(row, { deleted: true, updatedAt: new Date(), includeContent: isJournalContentEnabled() }), { date });
+    }
+    for (const row of tasks) {
+      const date = journalDateFor(row);
+      const oldDate = journalDateFor(previous.find(r => r.id === row.id) || {});
+      if (date) await client.enqueue(taskToJournalRecord(row, { includeContent: isJournalContentEnabled(), includeSubtaskText: isSubtaskTextEnabled() }), { date, previousDate: oldDate && oldDate !== date ? oldDate : undefined });
+    }
+  } catch { publish({ status: 'error', errorCode: 'QUEUE_FAILED' }); }
 }

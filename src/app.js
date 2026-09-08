@@ -12,6 +12,8 @@ import * as syncRunner from "./sync-runner.js";
 import { toast, confirmDialog, announce } from "./ui.js";
 import { openSettingsSheet } from "./settings.js";
 
+import { initTimeline } from './timeline-ui.js';
+import { recoverRestore } from './data-transfer.js';
 const $ = (id) => document.getElementById(id);
 
 const state = { tasks: [], settings: DEFAULT_SETTINGS };
@@ -921,11 +923,13 @@ async function boot() {
   // install as new. Matches loom's boot order.
   syncRunner.attach();
   journal.attachJournal();
+  await recoverRestore().catch(() => toast('Task-history recovery is pending. Retry in Settings.'));
   await refresh();
+  const timeline = await initTimeline({ onTasksVisible: () => refresh().catch(error => toast(error.message)) });
   handleUrlIntake();
   wireAddBar();
   $("open-settings").addEventListener("click", () => {
-    openSettingsSheet({ onChanged: (settings) => { state.settings = settings; applyFont(); applyAddKindUI(); refresh().catch(() => toast("Couldn’t refresh tasks. Please reopen Today.")); } });
+    openSettingsSheet({ onChanged: (settings) => { state.settings = settings; applyFont(); applyAddKindUI(); timeline.refresh(); refresh().catch(() => toast("Couldn’t refresh tasks. Please reopen Today.")); } });
   });
 
   if ("serviceWorker" in navigator) {
@@ -939,4 +943,15 @@ async function boot() {
   }).catch(() => { /* local storage is always the source of truth */ });
 }
 
-boot();
+let wakeSyncAt = 0;
+function wakeSync() {
+  if (document.hidden || Date.now() - wakeSyncAt < 10000) return;
+  wakeSyncAt = Date.now(); syncRunner.runSync().then(() => refresh()).catch(() => {});
+}
+window.addEventListener('online', wakeSync);
+document.addEventListener('visibilitychange', wakeSync);
+boot().catch(error => {
+  toast(error.message || 'Could not open saved data. Close other Today tabs and reload.', { duration: 30000 });
+  const retry = document.createElement('button'); retry.className = 'btn'; retry.textContent = 'Reload Today'; retry.onclick = () => location.reload();
+  document.getElementById('body-scroll')?.prepend(retry);
+});

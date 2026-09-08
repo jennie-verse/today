@@ -25,7 +25,7 @@ test('all malformed rows are rejected before any import choice or write', () => 
 
 test('duplicate task ids and unsupported backup versions are rejected', () => {
   assert.match(validatePayload(backup([task, task])), /invalid/i);
-  for (const version of [-1, 0, 1.5, 2, '1', null]) {
+  for (const version of [-1, 0, 1.5, 3, '1', null]) {
     assert.match(validatePayload({ ...backup(), version }), /version/i);
   }
 });

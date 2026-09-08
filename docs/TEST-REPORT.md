@@ -68,3 +68,20 @@
 - 검증: 전체 기존 테스트 및 추가 회귀 테스트, JavaScript 구문 검사. 격리된 Chromium에서 데스크톱 1280×900/모바일 390×844 저장·새로고침·실패 복구 검증. Browser plugin not available; bundled Playwright 사용.
 - 주입 검증: 실제 IndexedDB 요청 성공 직후 abort 시 데이터/알림 미반영.
 - 한계: 실제 iPhone Safari/Home Screen 및 개인 계정의 실서버 동기화는 직접 시험하지 않음.
+
+
+## Timeline 출시 검증 — 2026-09-08
+
+빌드: `2026.09.08-timeline1`. Browser plugin not available; bundled Playwright Chromium, macOS, 별도 브라우저 프로필과 로컬 HTTP 서버. 기존 사용자 데이터·비공개 저장소를 테스트에 사용하지 않았습니다.
+
+- Node 자동 테스트 63개 통과, 전체 JS 문법 검사 통과.
+- 실제 IndexedDB: 시작만 저장→종료 추가/제거, 동일 ID, 오래된 탭 수정 거부, 요청 성공 이후 transaction abort까지 실패로 처리, v1→v2 DB 이전과 기존 할 일 보존.
+- 백업: v1 Replace에서 Timeline 유지, v2 복원 및 삭제 복구, 이력 저장 실패를 주입한 뒤 Retry 복구.
+- 두 격리 기기와 가상 GitHub API: 종료 수정 수렴·동시 변경 보존·충돌 해결 유지·SHA 충돌 재시도·업로드 중 편집 보존·깨진 원격 파일 덮어쓰기 방지.
+- UI: `8:10am`, `8:10 pm`, 빈 제목, 종료 편집, Markdown 미리보기 요청 형식 확인.
+- 390×844 / 844×390 / 820×1180 / 1180×820 및 글자 크기 6·8·10·12·14·17 조합에서 페이지 가로 넘침 없음. 모바일 시간축·내보내기와 태블릿/가로 목록 스크린샷 확인.
+- Service Worker 활성화 후 오프라인 재실행·저장·재실행 통과. 검사 흐름의 페이지 오류 없음.
+
+재현: `npm test`, `npm run test:syntax`. 브라우저 회귀는 Published를 포트 8837로 정적 제공하고 `PLAYWRIGHT_PATH`에 Playwright 패키지 경로를 지정한 뒤 `node tests/timeline-browser.cjs`, `node tests/timeline-offline.cjs`를 실행합니다. `TODAY_TEST_URL`로 테스트 서버 주소를 지정할 수 있습니다. 브라우저 스크립트는 테스트 데이터만 사용하는 환경에서 실행합니다.
+
+미검증: 실제 iPhone/iPad Safari·홈 화면 설치 업데이트·사용자 비공개 GitHub 토큰으로의 실계정 동기화. WebKit 바이너리는 이 환경에 설치되어 있지 않습니다. 실제 공개 배포 결과는 작업 공간의 Plan/today_timeline-plan/Release_Report.md에 기록합니다.

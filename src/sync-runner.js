@@ -12,6 +12,8 @@
 
 import * as store from "./store.js";
 import * as sync from "./sync.js";
+import { onTimelineChange } from "./timeline-store.js";
+import { runTimelineSync } from "./timeline-sync.js";
 
 // 공용 모듈과 같은 4초 디바운스입니다. 항목을 연달아 고칠 때 요청이 쌓이지 않게 합니다.
 const PUSH_DEBOUNCE_MS = 4000;
@@ -39,6 +41,7 @@ export function onSyncState(fn) {
 /** 앱 시작 시 한 번 부릅니다. 동기화가 꺼져 있어도 tombstone은 기록해 둡니다
     — 나중에 켰을 때 그동안 지운 것이 되살아나지 않게 하기 위해서입니다. */
 export function attach() {
+  onTimelineChange(origin => { if (origin === 'local') schedulePush(); });
   store.setSyncTaskChangeHook((next, previous) => {
     if (next) sync.clearTaskTombstone(next.id);
     else if (previous) sync.recordTaskDeletion(previous);
@@ -55,7 +58,16 @@ export function schedulePush() {
 /** @returns {Promise<{skipped?:boolean, pulled?:number, error?:Error}>} */
 export function runSync() {
   if (inFlight) return inFlight;
-  inFlight = runSyncOnce().finally(() => { inFlight = null; });
+  inFlight = (async () => {
+    const task = await runSyncOnce();
+    let timeline;
+    try { timeline = await runTimelineSync(); }
+    catch (error) { timeline = { error }; }
+    const error = task?.error || timeline?.error;
+    if (error) notify('error', { error });
+    else notify('idle', { pulled: (task?.pulled || 0) + (timeline?.pulled || 0) });
+    return { pulled: (task?.pulled || 0) + (timeline?.pulled || 0), ...(error ? { error } : {}) };
+  })().finally(() => { inFlight = null; });
   return inFlight;
 }
 
@@ -97,7 +109,7 @@ async function runSyncOnce() {
     const tasks = await store.getAllTasks();
     await sync.pushData({ settings: store.getSettings(), tasks });
 
-    notify("idle", { pulled });
+    // Final status is reported after both task and timeline sync finish.
     return { pulled };
   } catch (error) {
     notify("error", { error });

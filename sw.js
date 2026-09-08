@@ -1,5 +1,5 @@
 // Keep VERSION in step with APP_BUILD in ./src/version.js.
-const VERSION = "2026.09.08-review2";
+const VERSION = "2026.09.08-timeline1";
 const CACHE_NAME = `today-${VERSION}`;
 
 const APP_SHELL = [
@@ -10,6 +10,14 @@ const APP_SHELL = [
   "./assets/fonts/lexend-400.woff2",
   "./assets/fonts/lexend-700.woff2",
   "./src/app.js",
+  "./src/timeline-time.js",
+  "./src/timeline-model.js",
+  "./src/timeline-store.js",
+  "./src/timeline-ui.js",
+  "./src/timeline-sync.js",
+  "./src/timeline-markdown.js",
+  "./src/data-transfer.js",
+
   "./src/version.js",
   "./src/model.js",
   "./src/nlp-date.js",
@@ -43,12 +51,14 @@ self.addEventListener("install", (event) => {
     // defeating the whole point of bumping VERSION on a real edit.
     await Promise.all(APP_SHELL.map(async (path) => {
       const response = await fetch(new URL(path, self.registration.scope), { cache: "reload" });
+      if (!response.ok) throw new Error(`Missing app asset: ${path}`);
       await cache.put(path, response);
     }));
     await Promise.all(OPTIONAL_ASSETS.map(async (path) => {
       try {
         const response = await fetch(new URL(path, self.registration.scope), { cache: "reload" });
-        await cache.put(path, response);
+        if (!response.ok) throw new Error(`Missing app asset: ${path}`);
+      await cache.put(path, response);
       } catch { /* the fetch handler caches it on a later run */ }
     }));
     await self.skipWaiting();

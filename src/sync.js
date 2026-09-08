@@ -169,7 +169,7 @@ export function getTaskTombstones() {
 
 function saveTaskTombstones(tombstones) {
   const normalized = normalizeTombstones(tombstones);
-  writeItem(KEYS.taskTombstones, JSON.stringify(normalized));
+  if (!writeItem(KEYS.taskTombstones, JSON.stringify(normalized))) throw new Error("Could not save deletion history. Please retry.");
   return normalized;
 }
 
