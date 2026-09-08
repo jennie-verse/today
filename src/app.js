@@ -2,7 +2,7 @@ import {
   DEFAULT_SETTINGS,
   normalizeTask, subtaskProgress, todayKey, taskType,
   reconcileToday, todayCandidates, somedayTasks, todaySlotTasks,
-  migrateOrder, sortTodayTiers, autoPromoteEvents, todayDoneTasks, staleDoneTasks,
+  migrateOrder, sortTodayTiers, autoPromoteEvents, todayDoneTasks,
   nextOrder, somedayFiltered, switchTaskKind, splitNoteLines, tasksFromNoteLines,
 } from "./model.js";
 import { parseNaturalLanguage } from "./nlp-date.js";
@@ -13,46 +13,6 @@ import { toast, confirmDialog, announce } from "./ui.js";
 import { openSettingsSheet } from "./settings.js";
 
 const $ = (id) => document.getElementById(id);
-
-// ---------- one-time fresh-start reset (2026.09.05 "first release") ----------
-// This app is being treated as if released for the first time today. On the
-// first boot after this update, wipe today's own local data so every device
-// starts clean under the new v1 version stamp. Gated on FRESH_START_STAMP so
-// it runs exactly once per device, never again on later updates.
-//
-// Only keys today.js itself owns are touched:
-//  - the "today-db" IndexedDB database (this app's tasks store only)
-//  - localStorage keys prefixed "today." (settings, journal toggles/ledger,
-//    sync-enabled flag, last-sync timestamp, task tombstones)
-// KEYS.token ("sync.token.v1", from src/sync.js) is deliberately left alone —
-// it is a same-origin key shared with every other app on this GitHub Pages
-// account, not something today.js owns, so wiping it here would sign the
-// user out of sync on unrelated apps too.
-const FRESH_START_STAMP = "2026.09.05";
-const FRESH_START_KEY = "today.freshStartDone.v1";
-const FRESH_START_LOCAL_KEYS = [
-  "today.settings.v1",
-  "today.journalEnabled.v1",
-  "today.journalContent.v1",
-  "today.journalSubtaskText.v1",
-  "today.journalActivity.v1",
-  "today.syncEnabled",
-  "today.lastSyncAt",
-  "today.taskTombstones.v1",
-];
-
-async function runFreshStartResetIfNeeded() {
-  let already;
-  try { already = localStorage.getItem(FRESH_START_KEY); } catch { already = FRESH_START_STAMP; }
-  if (already === FRESH_START_STAMP) return;
-  try {
-    await store.withoutTaskHook(() => store.clearAllTasks());
-  } catch { /* best effort — IndexedDB may be unavailable */ }
-  for (const key of FRESH_START_LOCAL_KEYS) {
-    try { localStorage.removeItem(key); } catch { /* private mode */ }
-  }
-  try { localStorage.setItem(FRESH_START_KEY, FRESH_START_STAMP); } catch { /* best effort */ }
-}
 
 const state = { tasks: [], settings: DEFAULT_SETTINGS };
 
@@ -96,28 +56,10 @@ async function migrate() {
   state.tasks = state.tasks.map((t) => byId.get(t.id) || t);
 }
 
-// Done records from a previous day are deleted locally on boot, but only
-// after the journal hook already sent them — which it did the moment each
-// task was marked done (store.putTask -> notifyTaskChange -> journal.js).
-// The delete itself runs through withoutTaskHook so it does NOT re-notify
-// journal.js: that would enqueue a tombstone and erase the record from
-// Daybook, which is the opposite of what "old items live on in Daybook"
-// means. This only ever touches Published/today's own IndexedDB.
-async function cleanupOldDone() {
-  const stale = staleDoneTasks(state.tasks, todayKey());
-  if (!stale.length) return;
-  const staleIds = new Set(stale.map((t) => t.id));
-  await store.withoutTaskHook(async () => {
-    for (const t of stale) await store.deleteTaskById(t.id);
-  });
-  state.tasks = state.tasks.filter((t) => !staleIds.has(t.id));
-}
-
 async function refresh() {
   await loadTasks();
   await migrate();
   await reconcile();
-  await cleanupOldDone();
   render();
 }
 
@@ -233,7 +175,7 @@ function openTaskEditor(task) {
   // date/time phrase and its internal newlines must survive the round trip.
   const input = isNote ? document.createElement("textarea") : document.createElement("input");
   if (!isNote) input.type = "text";
-  input.maxLength = isNote ? 2000 : 200;
+  input.maxLength = isNote ? 2000 : 140;
   input.value = task.title;
   input.style.width = "100%";
   if (isNote) { input.style.minHeight = "120px"; input.style.resize = "vertical"; }
@@ -262,16 +204,15 @@ function openTaskEditor(task) {
         next = normalizeTask({ ...task, title: raw, type: "note" });
       } else {
         const parsed = parseNaturalLanguage(raw, { now: new Date() });
-        // Stage 1 has no kind-switching UI yet: a Task/Event's kind still
-        // tracks whether the edited text carries a time, same rule as
-        // creation (plan §2).
-        const type = Number.isFinite(parsed.scheduledAtMinutes) ? "event" : "task";
+        // Renaming must keep the event kind and its existing schedule.
+        // A newly entered date/time updates only the supplied schedule fields.
+        const type = Number.isFinite(parsed.scheduledAtMinutes) ? "event" : taskType(task);
         next = normalizeTask({
           ...task,
           title: parsed.title,
           type,
-          scheduledFor: parsed.scheduledFor,
-          scheduledAtMinutes: parsed.scheduledAtMinutes,
+          scheduledFor: parsed.scheduledFor ?? task.scheduledFor,
+          scheduledAtMinutes: parsed.scheduledAtMinutes ?? task.scheduledAtMinutes,
         });
       }
       await store.putTask(next);
@@ -287,13 +228,13 @@ function openTaskEditor(task) {
     if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
     document.removeEventListener("keydown", onKey);
   }
-  function onKey(e) { if (e.key === "Escape") close(); }
+  function onKey(e) { if (e.key === "Escape" && !e.isComposing && e.keyCode !== 229) close(); }
   closeBtn.addEventListener("click", close);
   cancelBtn.addEventListener("click", close);
   saveBtn.addEventListener("click", save);
   if (!isNote) {
     input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && !composing) { e.preventDefault(); save(); }
+      if (e.key === "Enter" && !composing && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); save(); }
     });
   }
   overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
@@ -377,8 +318,8 @@ function openSubtaskEditor(task) {
         }
         input.addEventListener("blur", commit);
         input.addEventListener("keydown", (e) => {
-          if (e.key === "Enter" && !editComposing) { e.preventDefault(); input.blur(); }
-          if (e.key === "Escape") { done = true; renderList(); }
+          if (e.key === "Enter" && !editComposing && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); input.blur(); }
+          if (e.key === "Escape" && !e.isComposing && e.keyCode !== 229) { done = true; renderList(); }
         });
       }
       titleEl.addEventListener("click", startEdit);
@@ -416,7 +357,7 @@ function openSubtaskEditor(task) {
   }
   addBtn.addEventListener("click", addSubtask);
   addInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !composing) { e.preventDefault(); addSubtask(); }
+    if (e.key === "Enter" && !composing && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); addSubtask(); }
   });
 
   function close() {
@@ -424,7 +365,7 @@ function openSubtaskEditor(task) {
     document.removeEventListener("keydown", onKey);
     refresh();
   }
-  function onKey(e) { if (e.key === "Escape") close(); }
+  function onKey(e) { if (e.key === "Escape" && !e.isComposing && e.keyCode !== 229) close(); }
   closeBtn.addEventListener("click", close);
   overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
   document.addEventListener("keydown", onKey);
@@ -489,7 +430,7 @@ function openKindSheet(task) {
     if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
     document.removeEventListener("keydown", onKey);
   }
-  function onKey(e) { if (e.key === "Escape") close(); }
+  function onKey(e) { if (e.key === "Escape" && !e.isComposing && e.keyCode !== 229) close(); }
   [["task", "☐ Task"], ["note", "— Note"], ["event", "⏱ Event"]].forEach(([kind, label]) => {
     body.appendChild(menuItemButton(label, () => { close(); changeTaskKind(task, kind); }));
   });
@@ -566,8 +507,8 @@ function openTurnIntoTasksSheet(note) {
         }
         input.addEventListener("blur", commit);
         input.addEventListener("keydown", (e) => {
-          if (e.key === "Enter" && !editComposing) { e.preventDefault(); input.blur(); }
-          if (e.key === "Escape") { renderRows(); }
+          if (e.key === "Enter" && !editComposing && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); input.blur(); }
+          if (e.key === "Escape" && !e.isComposing && e.keyCode !== 229) { renderRows(); }
         });
       }
       titleEl.addEventListener("click", startEdit);
@@ -600,7 +541,7 @@ function openTurnIntoTasksSheet(note) {
     if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
     document.removeEventListener("keydown", onKey);
   }
-  function onKey(e) { if (e.key === "Escape") close(); }
+  function onKey(e) { if (e.key === "Escape" && !e.isComposing && e.keyCode !== 229) close(); }
   cancelBtn.addEventListener("click", close);
   overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
   document.addEventListener("keydown", onKey);
@@ -642,7 +583,7 @@ function openRowMenu(task, { context, tierList }) {
     if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
     document.removeEventListener("keydown", onKey);
   }
-  function onKey(e) { if (e.key === "Escape") close(); }
+  function onKey(e) { if (e.key === "Escape" && !e.isComposing && e.keyCode !== 229) close(); }
   function act(fn) { return () => { close(); fn(); }; }
 
   const kind = taskType(task);
@@ -834,9 +775,8 @@ function render() {
     somedayHost.appendChild(box);
   });
 
-  // Done is scoped to today only (plan §8 stage 1 #5) — items done on a
-  // previous day are cleaned up on boot (see cleanupOldDone) and live on in
-  // Daybook instead.
+  // Show only today’s completions, while keeping older records locally for
+  // backups and journal backfill even when journal sync is off or offline.
   const doneToday = todayDoneTasks(state.tasks, key);
   $("done-count").textContent = `(${doneToday.length})`;
   const doneHost = $("done-list");
@@ -846,7 +786,7 @@ function render() {
   } else {
     doneToday.forEach((task) => doneHost.appendChild(taskRow(task, { context: "done" })));
   }
-  doneHost.appendChild(node("p", "empty-hint done-note", "Older Done items are no longer kept here — see Daybook."));
+  doneHost.appendChild(node("p", "empty-hint done-note", "Older Done items stay in your backups. Journaled items are also in Daybook."));
 }
 
 // ---------- add bar ----------
@@ -904,58 +844,43 @@ function wireAddBar() {
   textarea.addEventListener("compositionstart", () => { composingNote = true; });
   textarea.addEventListener("compositionend", () => { composingNote = false; });
 
+  let adding = false;
   async function submitAdd() {
-    const isNote = currentAddKind() === "note";
-    if (isNote) {
-      if (composingNote) return;
-      const raw = textarea.value;
-      if (!raw.trim()) return;
-      try {
-        // Note preserves internal newlines — clampText only trims the ends
-        // (plan §2 clampText note-branch).
-        const task = normalizeTask({
-          title: raw,
-          type: "note",
-          status: "someday",
-          order: nextOrder(state.tasks, "someday"),
-        });
-        await store.putTask(task);
-        textarea.value = "";
-        await refresh();
-        toast("Added to Someday");
-      } catch (err) {
-        toast(err?.message || "Couldn't add that note");
-      }
-      return;
-    }
-    if (composingAdd) return;
-    const raw = input.value;
+    const kind = currentAddKind();
+    const isNote = kind === "note";
+    if (adding || (isNote ? composingNote : composingAdd)) return;
+    const field = isNote ? textarea : input;
+    const raw = field.value;
     if (!raw.trim()) return;
-    const parsed = parseNaturalLanguage(raw, { now: new Date() });
+    adding = true;
+    submit.disabled = true;
     try {
-      // A parsed time makes it an Event (plan §2), otherwise it keeps
-      // whichever of Task/Event the chips selected (Note is handled above).
-      const type = Number.isFinite(parsed.scheduledAtMinutes) ? "event" : (currentAddKind() === "event" ? "event" : "task");
+      const parsed = isNote ? null : parseNaturalLanguage(raw, { now: new Date() });
+      const type = isNote ? "note" : Number.isFinite(parsed.scheduledAtMinutes) ? "event" : kind;
       const task = normalizeTask({
-        title: parsed.title,
+        title: isNote ? raw : parsed.title,
         type,
         status: "someday",
         order: nextOrder(state.tasks, "someday"),
-        scheduledFor: parsed.scheduledFor,
-        scheduledAtMinutes: parsed.scheduledAtMinutes,
+        scheduledFor: parsed?.scheduledFor,
+        scheduledAtMinutes: parsed?.scheduledAtMinutes,
       });
       await store.putTask(task);
-      input.value = "";
+      // A slow save must not erase text typed for the next item.
+      if (field.value === raw) field.value = "";
       await refresh();
-      toast(parsed.scheduledFor ? `Added to Someday · ${parsed.scheduledFor}` : "Added to Someday");
+      toast(parsed?.scheduledFor ? `Added to Someday · ${parsed.scheduledFor}` : "Added to Someday");
     } catch (err) {
-      toast(err?.message || "Couldn't add that task");
+      toast(err?.message || `Couldn't add that ${isNote ? "note" : "task"}`);
+    } finally {
+      adding = false;
+      submit.disabled = false;
     }
   }
 
   submit.addEventListener("click", submitAdd);
   input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !composingAdd) { e.preventDefault(); submitAdd(); }
+    if (e.key === "Enter" && !composingAdd && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); submitAdd(); }
   });
   // Enter inserts a newline in the Note textarea (multi-line input) — only
   // the ＋ button submits a note, unlike the single-line Task/Event input.
@@ -989,7 +914,6 @@ function handleUrlIntake() {
 // ---------- boot ----------
 
 async function boot() {
-  await runFreshStartResetIfNeeded();
   state.settings = store.getSettings();
   applyFont();
   // Local changes start queueing (tombstones/pushes) immediately, even while
@@ -1001,7 +925,7 @@ async function boot() {
   handleUrlIntake();
   wireAddBar();
   $("open-settings").addEventListener("click", () => {
-    openSettingsSheet({ onChanged: (settings) => { state.settings = settings; applyFont(); } });
+    openSettingsSheet({ onChanged: (settings) => { state.settings = settings; applyFont(); applyAddKindUI(); refresh().catch(() => toast("Couldn’t refresh tasks. Please reopen Today.")); } });
   });
 
   if ("serviceWorker" in navigator) {

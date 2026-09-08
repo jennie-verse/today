@@ -1,7 +1,7 @@
 // backup.js — Export/Import, format validation, Merge rules.
 
 import * as store from "./store.js";
-import { pad2 } from "./model.js";
+import { pad2, STATUSES, TYPES } from "./model.js";
 import { toast, undoToast, confirmDialog } from "./ui.js";
 import { exportActivityLedger, replaceActivityLedger } from "./journal.js";
 
@@ -39,11 +39,45 @@ export async function exportBackup() {
   toast("Backup exported");
 }
 
-function validatePayload(data) {
-  if (!data || typeof data !== "object") return "Not a valid JSON object.";
+function validDate(value) {
+  if (value == null) return true;
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+// Validate every row before showing a destructive choice. Keep valid records
+// verbatim: normalizing here would change updatedAt and truncate older text.
+export function validatePayload(data) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return "Not a valid JSON object.";
   if (data.format !== FORMAT) return "This file isn't a Today backup.";
-  if (typeof data.version !== "number" || data.version > VERSION) return "This backup was made by a newer version of Today.";
+  if (data.version !== VERSION) return "This backup version isn't supported by Today.";
   if (!Array.isArray(data.tasks)) return "Backup is missing task data.";
+  const ids = new Set();
+  for (const [index, task] of data.tasks.entries()) {
+    const invalid = `Task ${index + 1} is invalid. Nothing was imported.`;
+    if (!task || typeof task !== "object" || Array.isArray(task)) return invalid;
+    if (typeof task.id !== "string" || !task.id.trim() || ids.has(task.id)) return invalid;
+    ids.add(task.id);
+    if (typeof task.title !== "string" || !task.title.trim() || !STATUSES.has(task.status)) return invalid;
+    if (task.type != null && !TYPES.has(task.type)) return invalid;
+    if (task.order != null && !Number.isFinite(task.order)) return invalid;
+    if (!validDate(task.todayDate) || !validDate(task.doneDate) || !validDate(task.scheduledFor)) return invalid;
+    if (task.scheduledAtMinutes != null && (!Number.isInteger(task.scheduledAtMinutes) || task.scheduledAtMinutes < 0 || task.scheduledAtMinutes >= 1440)) return invalid;
+    if (typeof task.updatedAt !== "string" || !Number.isFinite(Date.parse(task.updatedAt))) return invalid;
+    if (task.createdAt != null && !Number.isFinite(Date.parse(task.createdAt))) return invalid;
+    if (task.doneAt != null && !Number.isFinite(Date.parse(task.doneAt))) return invalid;
+    if (task.subtasks != null) {
+      if (!Array.isArray(task.subtasks)) return invalid;
+      const subtaskIds = new Set();
+      for (const subtask of task.subtasks) {
+        if (!subtask || typeof subtask.id !== "string" || !subtask.id.trim() || subtaskIds.has(subtask.id)
+          || typeof subtask.title !== "string" || !subtask.title.trim() || typeof subtask.done !== "boolean") return invalid;
+        subtaskIds.add(subtask.id);
+      }
+    }
+  }
+  if (data.journalActivity != null && !Array.isArray(data.journalActivity)) return "Backup journal data is invalid.";
   return null;
 }
 
@@ -82,13 +116,21 @@ export async function importBackup(file, { onDone } = {}) {
     if (!ok) return;
     const prevTasks = await store.getAllTasks();
     const prevJournalActivity = exportActivityLedger();
-    await store.clearAllTasks();
-    await store.bulkPutTasks(data.tasks);
+    try {
+      await store.bulkPutTasks(data.tasks, { replace: true, notify: true });
+    } catch {
+      toast("Couldn't restore the backup. Your existing tasks were kept.");
+      return;
+    }
     if (Array.isArray(data.journalActivity)) replaceActivityLedger(data.journalActivity);
     undoToast(`Replaced with backup (${data.tasks.length} tasks)`, {
       onUndo: async () => {
-        await store.clearAllTasks();
-        await store.bulkPutTasks(prevTasks);
+        try {
+          await store.bulkPutTasks(prevTasks, { replace: true, notify: true });
+        } catch {
+          toast("Couldn't undo the import. Please try restoring your backup again.");
+          return;
+        }
         replaceActivityLedger(prevJournalActivity);
         if (onDone) onDone();
       },
@@ -101,11 +143,18 @@ export async function importBackup(file, { onDone } = {}) {
   let added = 0, updated = 0, skipped = 0;
   const existing = await store.getAllTasks();
   const byId = new Map(existing.map((t) => [t.id, t]));
+  const toWrite = [];
   for (const incoming of data.tasks) {
     const current = byId.get(incoming.id);
-    if (!current) { await store.bulkPutTasks([incoming]); added += 1; }
-    else if (new Date(incoming.updatedAt) > new Date(current.updatedAt)) { await store.bulkPutTasks([incoming]); updated += 1; }
+    if (!current) { toWrite.push(incoming); added += 1; }
+    else if (new Date(incoming.updatedAt) > new Date(current.updatedAt)) { toWrite.push(incoming); updated += 1; }
     else skipped += 1;
+  }
+  try {
+    await store.bulkPutTasks(toWrite, { notify: true });
+  } catch {
+    toast("Couldn't merge the backup. Your existing tasks were kept.");
+    return;
   }
   if (Array.isArray(data.journalActivity)) replaceActivityLedger(data.journalActivity, { merge: true });
   toast(`Merged — added ${added} · updated ${updated} · skipped ${skipped}`);

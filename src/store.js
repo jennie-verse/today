@@ -108,10 +108,37 @@ export async function putTask(task) {
 // Used by reconciliation (bulk status change) and backup restore — skips the
 // per-item change hook since these are bulk/background writes, matching
 // loom's bulkPutBlocks (journalOnly bulk path).
-export async function bulkPutTasks(tasks) {
+// Resolve only after the whole transaction commits. In particular, a bad
+// imported row must never leave an earlier clear/put partially applied.
+export async function bulkPutTasks(tasks, { replace = false, notify = false } = {}) {
   const db = await openDB();
-  const store = tx(db, "tasks", "readwrite");
-  await Promise.all(tasks.map((task) => reqToPromise(store.put(task))));
+  let previous = [];
+  await new Promise((resolve, reject) => {
+    const transaction = db.transaction("tasks", "readwrite");
+    const taskStore = transaction.objectStore("tasks");
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error || new Error("Couldn't save tasks"));
+    transaction.onabort = () => reject(transaction.error || new Error("Task save was cancelled"));
+    try {
+      if (notify) {
+        const request = taskStore.getAll();
+        request.onsuccess = () => { previous = request.result || []; };
+      }
+      if (replace) taskStore.clear();
+      for (const task of tasks) taskStore.put(task);
+    } catch (error) {
+      transaction.abort();
+      reject(error);
+    }
+  });
+  if (notify) {
+    const byId = new Map(previous.map((task) => [task.id, task]));
+    const incomingIds = new Set(tasks.map((task) => task.id));
+    if (replace) {
+      for (const task of previous) if (!incomingIds.has(task.id)) notifyTaskChange(null, task);
+    }
+    for (const task of tasks) notifyTaskChange(task, byId.get(task.id) || null);
+  }
   return tasks;
 }
 
