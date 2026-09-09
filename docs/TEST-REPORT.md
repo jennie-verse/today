@@ -108,3 +108,13 @@
 - **복원 회복**: localStorage 쓰기 실패가 Export/Import를 영구히 막지 않도록 tombstone·ledger 갱신을 감싸고 pending 표식은 항상 정리한다. "Retry restore" 버튼은 실제 pending 상태에서만 노출한다. Reset이 pending으로 끝나도 시트를 닫고 화면을 갱신한다. DB 업그레이드 차단 시에는 잘못된 "task-history recovery" 토스트를 띄우지 않는다.
 - **Journal**: 백업 복원으로 할 일이 어떤 날짜에도 투영되지 않게 바뀌면 예전 날짜의 Journal 기록에 삭제 표식을 남긴다(일반 편집 경로와 동일).
 - Node 테스트 65개와 JavaScript 문법 검사 통과. 격리 Chromium(America/Chicago)에서 위 흐름과 2026-11-01 DST 반복 시각, Asia/Seoul·Asia/Kolkata 시간대 변환을 확인했다. 페이지 오류 없음. 실제 iPhone/iPad Safari와 실계정 비공개 Sync는 미검증.
+
+## 2026-09-08 컨트롤 크기 정리 (reviewfix2)
+
+빌드 `2026.09.08-reviewfix2`. "글씨에 비해 버튼이 크고 자리 낭비가 많다"는 피드백에 따라, `consistency1`에서 대부분의 작은 컨트롤을 실제 44px 상자로 키웠던 것을 되돌렸다. 기본 앱의 방식(작은 시각 상자 + 투명 `::after` 44px 탭 영역)으로 통일했다.
+
+- Tasks/Timeline 탭 34px, Timetable/List 칩 34px, 툴바 화살표 40px, 날짜 입력 36px.
+- 액션·다이얼로그·현재활동·충돌 버튼은 44px 강제 제거 → `.btn`(시각 32px + `::after` 44px 탭).
+- "Add end time"는 전폭 막대 대신 자동 폭 소형 pill.
+- 기록 카드 패딩·목록 간격 축소, 다이얼로그 입력 40px. 입력·선택창은 16px 유지.
+- `elementFromPoint`로 탭·칩·Save/Start·행 편집의 44px 탭 영역 확인. 6단계 글자 크기(6·8·17px)×List/Timetable/다이얼로그에서 가로 넘침 없음. 자동 테스트 65개 통과. 공개 배포본 CSS 해시 로컬 일치, Timeline 생성/편집/내보내기/삭제 콘솔 오류 0.
