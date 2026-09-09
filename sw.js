@@ -1,5 +1,5 @@
 // Keep VERSION in step with APP_BUILD in ./src/version.js.
-const VERSION = "2026.09.08-reviewfix1";
+const VERSION = "2026.09.08-reviewfix2";
 const CACHE_NAME = `today-${VERSION}`;
 
 const APP_SHELL = [
