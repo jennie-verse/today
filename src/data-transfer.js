@@ -55,23 +55,33 @@ export function recoverRestore() {
   if (recovering) return recovering;
   recovering = recover().finally(() => { recovering = null; }); return recovering;
 }
+export async function hasPendingRestore() {
+  try { return (await readSnapshot(['timelineMeta'])).timelineMeta.some(r => r.key === 'restorePending'); }
+  catch { return false; }
+}
 async function recover() {
   const s = await readSnapshot(ALL);
   const pending = s.timelineMeta.find(r => r.key === 'restorePending');
   if (!pending) return;
   const ids = new Set(s.tasks.map(r => r.id));
   const deleted = pending.beforeTasks.filter(r => !pending.afterTasks.some(t => t.id === r.id) && !ids.has(r.id));
-  sync.mergeTaskTombstones(deleted.map(r => ({ id: r.id, deletedAt: pending.at })));
-  for (const r of pending.afterTasks) if (ids.has(r.id)) sync.clearTaskTombstone(r.id);
-  if (pending.ledger) {
-    const current = journal.exportActivityLedger();
-    const key = r => `${r.date}:${r.taskId}`;
-    const baseline = new Map(pending.ledger.baseline.map(r => [key(r), JSON.stringify(r)]));
-    const addedSince = current.filter(r => baseline.get(key(r)) !== JSON.stringify(r));
-    // Preserve user actions performed after the DB commit while the ledger was blocked.
-    journal.replaceActivityLedger(pending.ledger.rows, { merge: pending.ledger.merge });
-    journal.replaceActivityLedger(addedSince, { merge: true });
-  }
+  // Tombstone + ledger writes touch localStorage, which can be full or blocked
+  // (Safari private mode). Tasks and the timeline are already committed and the
+  // ledger is non-critical 90-day history, so a write failure here must not keep
+  // the restorePending row and wedge every later Export / Import.
+  try {
+    sync.mergeTaskTombstones(deleted.map(r => ({ id: r.id, deletedAt: pending.at })));
+    for (const r of pending.afterTasks) if (ids.has(r.id)) sync.clearTaskTombstone(r.id);
+    if (pending.ledger) {
+      const current = journal.exportActivityLedger();
+      const key = r => `${r.date}:${r.taskId}`;
+      const baseline = new Map(pending.ledger.baseline.map(r => [key(r), JSON.stringify(r)]));
+      const addedSince = current.filter(r => baseline.get(key(r)) !== JSON.stringify(r));
+      // Preserve user actions performed after the DB commit while the ledger was blocked.
+      journal.replaceActivityLedger(pending.ledger.rows, { merge: pending.ledger.merge });
+      journal.replaceActivityLedger(addedSince, { merge: true });
+    }
+  } catch { /* device storage unavailable — task history not updated from the backup */ }
   await atomicData(['timelineMeta'], data => ({ writes: { timelineMeta: data.timelineMeta.filter(r => r.key !== 'restorePending' || r.id !== pending.id) } }));
   // Projection is optional; original tasks and the timeline are already restored.
   await journal.projectRestoredTasks(pending.afterTasks, pending.beforeTasks);

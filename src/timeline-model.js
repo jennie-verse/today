@@ -37,7 +37,14 @@ export function reviseEntry(draft, previous = null, { now = Date.now(), known = 
   return result;
 }
 export const compareRevision = (a, b) => Date.parse(a.updatedAt) - Date.parse(b.updatedAt) || a.revisionId.localeCompare(b.revisionId);
-export const sortEntries = entries => [...entries].sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt) || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+// Plan §8: displayed start time first, then the absolute instant (so a
+// DST fall-back repeated hour still orders CDT before CST at the same
+// wall-clock minute), then createdAt, then id.
+export const sortEntries = entries => [...entries].sort((a, b) =>
+  a.startedAt.slice(11, 16).localeCompare(b.startedAt.slice(11, 16))
+  || Date.parse(a.startedAt) - Date.parse(b.startedAt)
+  || a.createdAt.localeCompare(b.createdAt)
+  || a.id.localeCompare(b.id));
 export function dayEntries(entries, date) {
   return sortEntries(entries.filter(r => !r.deletedAt && r.startDate === date));
 }

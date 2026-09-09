@@ -84,14 +84,22 @@ test('revision equality ignores JSON key order but immutable identity metadata c
   assert.throws(() => mergeEntries([first, {...first,title:'different'}]), /same revision/);
 });
 
-test('explicit AM/PM selection overrides the existing suffix', () => {
-  assert.equal(parseClock('8:10 AM', 'PM'),1210);
-  assert.equal(parseClock('8:10 PM', 'AM'),490);
+test('the AM/PM selector fills in a missing suffix but never silently overrides a conflicting one', () => {
+  assert.equal(parseClock('8:10', 'PM'),1210);          // selector supplies the missing meridiem
+  assert.equal(parseClock('8:10 PM', 'PM'),1210);       // selector agrees with the typed suffix
+  assert.throws(() => parseClock('8:10 AM', 'PM'), /disagree/);
+  assert.throws(() => parseClock('8:10 PM', 'AM'), /disagree/);
 });
-test('DST repeated times sort by their actual instants and both show offsets in Markdown', () => {
+test('DST repeated times sort by displayed clock time first, then instant, and both show offsets in Markdown', () => {
   const make = startedAt => reviseEntry({title:'활동',timeZone:zone,startedAt},null,{now});
   const first=make('2025-11-02T01:50:00-05:00'),second=make('2025-11-02T01:10:00-06:00');
-  const md=timelineMarkdown([second,first],'2025-11-02');
-  assert.ok(md.indexOf('01:50 AM')<md.indexOf('01:10 AM'));
+  // Plan §8: displayed start time is the primary key, so 01:10 lists before 01:50
+  // even though 01:10 CST is the later instant. Both offsets stay visible.
+  const md=timelineMarkdown([first,second],'2025-11-02');
+  assert.ok(md.indexOf('01:10 AM')<md.indexOf('01:50 AM'));
   assert.match(md,/UTC-05:00/);assert.match(md,/UTC-06:00/);
+  // Same displayed minute still falls through to the absolute instant: CDT before CST.
+  const dupA=make('2025-11-02T01:30:00-05:00'),dupB=make('2025-11-02T01:30:00-06:00');
+  const dupMd=timelineMarkdown([dupB,dupA],'2025-11-02');
+  assert.ok(dupMd.indexOf('UTC-05:00')<dupMd.indexOf('UTC-06:00'));
 });

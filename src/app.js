@@ -923,7 +923,10 @@ async function boot() {
   // install as new. Matches loom's boot order.
   syncRunner.attach();
   journal.attachJournal();
-  await recoverRestore().catch(() => toast('Task-history recovery is pending. Retry in Settings.'));
+  await recoverRestore().catch((error) => {
+    // A blocked v1->v2 upgrade rejects here too; boot().catch shows the right message for that.
+    if (!/reload|other .*tab/i.test(String(error?.message || ''))) toast('Task-history recovery is pending. Retry in Settings.');
+  });
   await refresh();
   const timeline = await initTimeline({ onTasksVisible: () => refresh().catch(error => toast(error.message)) });
   handleUrlIntake();

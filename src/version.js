@@ -1,2 +1,2 @@
 // Single build stamp for the app shell. Must match VERSION in ../sw.js.
-export const APP_BUILD = "2026.09.08-consistency1";
+export const APP_BUILD = "2026.09.08-reviewfix1";

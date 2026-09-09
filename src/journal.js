@@ -245,8 +245,12 @@ export async function projectRestoredTasks(tasks, previous) {
     }
     for (const row of tasks) {
       const date = journalDateFor(row);
-      const oldDate = journalDateFor(previous.find(r => r.id === row.id) || {});
+      const before = previous.find(r => r.id === row.id) || {};
+      const oldDate = journalDateFor(before);
       if (date) await client.enqueue(taskToJournalRecord(row, { includeContent: isJournalContentEnabled(), includeSubtaskText: isSubtaskTextEnabled() }), { date, previousDate: oldDate && oldDate !== date ? oldDate : undefined });
+      // Task kept its id but no longer projects to any day (e.g. Today -> Someday):
+      // tombstone the day it used to occupy, matching queueTaskChange's else-if branch.
+      else if (oldDate) await client.enqueue(taskToJournalRecord(before, { deleted: true, updatedAt: new Date(), includeContent: isJournalContentEnabled() }), { date: oldDate });
     }
   } catch { publish({ status: 'error', errorCode: 'QUEUE_FAILED' }); }
 }

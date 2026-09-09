@@ -37,7 +37,7 @@ export async function initTimeline({ onTasksVisible = () => {} } = {}) {
   const panel = el('section', 'timeline-panel'); panel.id = 'timeline-panel'; panel.hidden = true;
   const state = { date: dateInZone(), entries: [], conflicts: [], view: getSettings().timelineView || 'timetable', tab: 'tasks', revision: 0 };
   const header = el('div', 'timeline-toolbar');
-  const date = el('input', 'timeline-date'); date.type = 'date'; date.value = state.date; date.setAttribute('aria-label', 'Timeline date');
+  const date = el('input', 'timeline-date'); date.type = 'date'; date.value = state.date; date.max = dateInZone(); date.setAttribute('aria-label', 'Timeline date');
   const today = button('Today', () => changeDate(dateInZone()), 'btn ghost');
   header.append(button('‹', () => changeDate(shiftDate(state.date, -1)), 'ico'), date, button('›', () => changeDate(shiftDate(state.date, 1)), 'ico'), today);
   header.firstChild.setAttribute('aria-label', 'Previous day'); header.children[2].setAttribute('aria-label', 'Next day');
@@ -79,25 +79,41 @@ export async function initTimeline({ onTasksVisible = () => {} } = {}) {
   function setTab(tab) {
     state.tab = tab; tasks.hidden = tab !== 'tasks'; panel.hidden = tab !== 'timeline';
     taskTab.setAttribute('aria-current', tab === 'tasks' ? 'page' : 'false'); timelineTab.setAttribute('aria-current', tab === 'timeline' ? 'page' : 'false');
-    setSettings({ lastTab: tab }); if (tab === 'tasks') onTasksVisible(); else refresh(true);
+    setSettings({ lastTab: tab }); if (tab === 'tasks') onTasksVisible(); else refresh();
   }
-  function setView(view) { state.view = view; setSettings({ timelineView: view }); render(true); }
+  function setView(view) { state.view = view; setSettings({ timelineView: view }); render(); }
+  // anchor = true only when the user moved to this date on purpose (date controls,
+  // Today, first load); tab / view round-trips keep the scroll position.
   function changeDate(value) { state.date = value; date.value = value; refresh(true); enableInput(); }
-  function enableInput() { save.disabled = saving || composing || !input.value.trim(); start.disabled = save.disabled || state.date !== dateInZone(); }
+  function enableInput() {
+    const onToday = state.date === dateInZone();
+    save.disabled = saving || composing || !input.value.trim();
+    start.hidden = !onToday; start.disabled = save.disabled || !onToday;
+  }
   async function quick(running) {
     if (saving || composing) return;
     saving = true; enableInput(); const raw = input.value, selectedDate = state.date, now = Date.now(), zone = zoneNow();
     try {
       const parsed = parseQuick(raw);
-      if (parsed.startMinutes === null && selectedDate !== dateInZone(now)) throw new Error('Add a time when recording a past day.');
-      if (running && selectedDate !== dateInZone(now)) throw new Error('Use Save for past activities.');
+      const onToday = selectedDate === dateInZone(now);
+      if (parsed.startMinutes === null && !onToday) throw new Error(selectedDate > dateInZone(now) ? 'That date is in the future. Record it once it happens, or add a time.' : 'Add a time when recording a past day.');
+      if (running && !onToday) throw new Error('Use Save for past activities.');
       if (running && parsed.endMinutes !== null) throw new Error('Use Save for an activity with an end time.');
-      const startedAt = parsed.startMinutes === null ? isoAt(now, zone) : wallToIso(selectedDate, parsed.startMinutes, zone);
+      let startedAt, endedAt;
+      try {
+        startedAt = parsed.startMinutes === null ? isoAt(now, zone) : wallToIso(selectedDate, parsed.startMinutes, zone);
+        endedAt = parsed.endMinutes === null ? null : wallToIso(selectedDate, parsed.endMinutes, zone);
+      } catch (error) {
+        if (!error.options) throw error;
+        // Repeated wall-clock hour on a DST fall-back day: let the editor pick the offset.
+        openEditor(null, { draft: { title: parsed.title, startText: parsed.startMinutes != null ? formatClock(parsed.startMinutes) : '', endText: parsed.endMinutes != null ? formatClock(parsed.endMinutes) : '' } });
+        throw new Error('This time occurs twice today. Pick the UTC offset in Add details.');
+      }
       if (parsed.endMinutes !== null && parsed.endMinutes < minutesOf(startedAt)) {
         openEditor(null, { draft: { title: parsed.title, startText: formatClock(startedAt), endText: formatClock(parsed.endMinutes) } });
         throw new Error('Choose Next day in Add details if this activity crosses midnight.');
       }
-      const draft = { title: parsed.title, startedAt, endedAt: parsed.endMinutes === null ? null : wallToIso(selectedDate, parsed.endMinutes, zone), timeZone: zone, isRunning: running };
+      const draft = { title: parsed.title, startedAt, endedAt, timeZone: zone, isRunning: running };
       try { await saveEntry(draft, { now }); }
       catch (error) {
         if (!error.running) throw error;
@@ -111,13 +127,19 @@ export async function initTimeline({ onTasksVisible = () => {} } = {}) {
     } catch (error) { inputError.textContent = error.message; }
     finally { saving = false; enableInput(); }
   }
-  async function refresh(scroll = false) {
+  async function refresh(anchor = false) {
     const rev = ++state.revision;
     try {
       const data = await readDay(state.date);
       if (rev !== state.revision) return;
-      state.entries = data.entries; state.conflicts = data.conflicts; render(scroll);
+      state.entries = data.entries; state.conflicts = data.conflicts; render(anchor);
     } catch (error) { message.textContent = error.message; }
+  }
+  // Keep keyboard / VoiceOver focus on the row the user just acted on (Plan §U03);
+  // render() has already replaced every card, so re-find it by id.
+  function focusRecord(id) {
+    const target = id && content.querySelector(`[data-entry-id="${CSS.escape(id)}"] .timeline-record-main`);
+    (target || input).focus();
   }
   function recordCard(record, continued = false) {
     const card = el('article', `timeline-record${record.isRunning ? ' is-current' : ''}`); card.dataset.entryId = record.id;
@@ -131,7 +153,7 @@ export async function initTimeline({ onTasksVisible = () => {} } = {}) {
     if (!record.endedAt) card.append(button('Add end time', () => openEditor(record, { focusEnd: true }), 'btn ghost timeline-add-end'));
     return card;
   }
-  function render(scroll = false) {
+  function render(anchor = false) {
     const oldScroll = content.scrollTop;
     timetable.setAttribute('aria-pressed', String(state.view === 'timetable')); list.setAttribute('aria-pressed', String(state.view === 'list'));
     const running = state.entries.filter(r => r.isRunning && !r.deletedAt);
@@ -183,7 +205,7 @@ export async function initTimeline({ onTasksVisible = () => {} } = {}) {
         message.append(el('span', '', 'List is shown so all overlapping activities remain readable.'));
       }
     }
-    content.scrollTop = scroll && state.view === 'timetable' && simpleDay(state.date, all) && all.length
+    content.scrollTop = anchor && state.view === 'timetable' && simpleDay(state.date, all) && all.length
       ? Math.max(0, (state.date === dateInZone() ? minutesOf(isoAt()) : Math.min(...all.map(r => r.startDate < state.date ? 0 : minutesOf(r.startedAt)))) - 80) : oldScroll;
     enableInput();
   }
@@ -227,8 +249,9 @@ export async function initTimeline({ onTasksVisible = () => {} } = {}) {
       if (busy || composing) return; busy = true; modal.box.dataset.busy = 'true'; error.textContent = '';
       try {
         const start = resolveWall('start'), end = fields.endTime.value.trim() ? resolveWall('end') : null;
-        await saveEntry({ ...entry, title: fields.title.value, startedAt: start, endedAt: end, timeZone: zone, isRunning: !end && isRunning.checked, deletedAt: null }, { expectedRevision: entry?.revisionId || null, switchCurrent, resolve: resolving });
+        const saved = await saveEntry({ ...entry, title: fields.title.value, startedAt: start, endedAt: end, timeZone: zone, isRunning: !end && isRunning.checked, deletedAt: null }, { expectedRevision: entry?.revisionId || null, switchCurrent, resolve: resolving });
         modal.close(); toast(entry ? 'Activity updated' : 'Activity saved'); await refresh();
+        focusRecord(saved?.id);
       } catch (e) { error.textContent = e.running ? 'Another activity is current. Use End current and start to switch at the start time above, or cancel.' : e.message; switchButton.hidden = !e.running; }
       finally { busy = false; modal.box.dataset.busy = 'false'; }
     }
@@ -237,7 +260,8 @@ export async function initTimeline({ onTasksVisible = () => {} } = {}) {
       if (busy || composing) return; busy = true; modal.box.dataset.busy = 'true';
       try {
       const deleted = await saveEntry({ ...entry, deletedAt: new Date().toISOString(), isRunning: false }, { expectedRevision: entry.revisionId, allowFuture: true, resolve: resolving });
-      modal.close(); await refresh(); undoToast('Activity deleted', { onUndo: async () => { try { await saveEntry({ ...entry, deletedAt: null }, { expectedRevision: deleted.revisionId, allowFuture: true }); } catch (e) { toast(e.message); } } });
+      modal.close(); await refresh(); input.focus();
+      undoToast('Activity deleted', { onUndo: async () => { try { await saveEntry({ ...entry, deletedAt: null }, { expectedRevision: deleted.revisionId, allowFuture: true }); await refresh(); focusRecord(entry.id); } catch (e) { toast(e.message); } } });
       } catch (e) { error.textContent = e.message; }
       finally { busy = false; modal.box.dataset.busy = 'false'; }
     }, 'btn danger'));
@@ -263,14 +287,27 @@ export async function initTimeline({ onTasksVisible = () => {} } = {}) {
     modal.foot.append(button('Close', modal.close, 'btn ghost')); modal.box.showModal();
   }
   async function openExport() {
-    const data = await readDay(state.date), exportDate = state.date, modal = dialog('Export Markdown');
-    const text = timelineMarkdown(data.entries, exportDate);
-    const preview = el('textarea', 'timeline-markdown'); preview.readOnly = true; preview.value = text; preview.setAttribute('aria-label', 'Markdown preview');
-    const note = el('p', 'hint', `${exportDate} · ${dayEntries(data.entries, exportDate).length} records. Start times only for ongoing activities. Continuations are exported on their start date.`);
-    modal.body.append(note, preview);
-    modal.foot.append(button('Close', modal.close, 'btn ghost'), button('Copy Markdown', async () => { try { await navigator.clipboard.writeText(preview.value); toast('Markdown copied'); } catch { preview.focus(); preview.select(); note.textContent = 'Select and copy the text below. Clipboard access was unavailable.'; } }), button('Download .md', () => download(preview.value, `today-timeline-${exportDate}.md`, 'text/markdown;charset=utf-8'), 'btn primary'));
+    const exportDate = state.date, modal = dialog('Export Markdown');
+    const preview = el('textarea', 'timeline-markdown'); preview.readOnly = true; preview.setAttribute('aria-label', 'Markdown preview');
+    const note = el('p', 'hint');
+    const status = el('p', 'timeline-status hint'); status.setAttribute('role', 'status'); status.hidden = true;
+    // §9: preview states the ongoing count and the no-end explanation separately,
+    // and is recomputed whenever the day changes underneath it.
+    const paint = entries => {
+      const rows = dayEntries(entries, exportDate);
+      const ongoing = rows.filter(r => r.isRunning).length;
+      const continued = entries.filter(r => r.startDate < exportDate && (r.endedAt ? r.endedAt.slice(0, 19) > `${exportDate}T00:00:00` : r.isRunning)).length;
+      preview.value = timelineMarkdown(entries, exportDate);
+      note.textContent = `${exportDate} · ${rows.length} record${rows.length === 1 ? '' : 's'}`
+        + (ongoing ? ` · ${ongoing} ongoing (start time only, no end)` : '')
+        + (continued ? ' · continuations are exported on their start date' : '');
+    };
+    paint((await readDay(exportDate)).entries);
+    modal.body.append(note, preview, status);
+    modal.foot.append(button('Close', modal.close, 'btn ghost'), button('Copy Markdown', async () => { try { await navigator.clipboard.writeText(preview.value); toast('Markdown copied'); } catch { preview.focus(); preview.select(); status.hidden = false; status.textContent = 'Select and copy the text above. Clipboard access was unavailable.'; } }), button('Download .md', () => download(preview.value, `today-timeline-${exportDate}.md`, 'text/markdown;charset=utf-8'), 'btn primary'));
     const unsubscribe = onTimelineChange(async () => {
-      try { const fresh = await readDay(exportDate); preview.value = timelineMarkdown(fresh.entries, exportDate); } catch { note.textContent = 'Could not refresh preview. Close and try Export again.'; }
+      try { const fresh = await readDay(exportDate); paint(fresh.entries); status.hidden = true; }
+      catch { status.hidden = false; status.textContent = 'Could not refresh the preview. Close and open Export again.'; }
     }); modal.box.addEventListener('close', unsubscribe, { once: true }); modal.box.showModal();
   }
   onTimelineChange(() => refresh());
@@ -284,6 +321,6 @@ export async function initTimeline({ onTasksVisible = () => {} } = {}) {
     }
     setTimeout(tick, 60000 - Date.now() % 60000 + 50);
   }; setTimeout(tick, 60000 - Date.now() % 60000 + 50);
-  setTab(getSettings().lastTab === 'timeline' ? 'timeline' : 'tasks'); enableInput(); await refresh();
+  setTab(getSettings().lastTab === 'timeline' ? 'timeline' : 'tasks'); enableInput(); await refresh(true);
   return { refresh };
 }

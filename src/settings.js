@@ -8,7 +8,7 @@ import { confirmDialog, toast } from "./ui.js";
 import * as sync from "./sync.js";
 import * as syncRunner from "./sync-runner.js";
 import * as journal from "./journal.js";
-import { resetData, recoverRestore } from './data-transfer.js';
+import { resetData, recoverRestore, hasPendingRestore } from './data-transfer.js';
 import { APP_BUILD } from "./version.js";
 
 function fmtWhen(ms) {
@@ -385,9 +385,11 @@ export function openSettingsSheet({ onChanged }) {
   });
   backupRow.append(exportBtn, importBtn);
   backupSec.appendChild(backupRow);
-  const retryRestore = document.createElement('button'); retryRestore.type = 'button'; retryRestore.className = 'btn'; retryRestore.textContent = 'Retry restore';
-  retryRestore.addEventListener('click', async () => { try { await recoverRestore(); toast('Restore recovery complete'); onChanged(store.getSettings()); } catch (error) { toast(error.message); } });
+  // Only shown while a restore's second phase is still pending on this device.
+  const retryRestore = document.createElement('button'); retryRestore.type = 'button'; retryRestore.className = 'btn'; retryRestore.textContent = 'Retry restore'; retryRestore.hidden = true;
+  retryRestore.addEventListener('click', async () => { try { await recoverRestore(); toast('Restore finished'); retryRestore.hidden = !(await hasPendingRestore()); onChanged(store.getSettings()); } catch (error) { toast(error.message); } });
   backupSec.appendChild(retryRestore);
+  hasPendingRestore().then((pending) => { retryRestore.hidden = !pending; });
 
   const aboutSec = section("About");
   const buildP = document.createElement("p");
@@ -404,12 +406,15 @@ export function openSettingsSheet({ onChanged }) {
   resetBtn.addEventListener("click", async () => {
     const ok = await confirmDialog({ title: "Reset everything?", message: "Tasks, timeline records, captured task history and display settings will be removed. Synced deletions also reach your other devices. Tokens are managed separately.", confirmLabel: "Reset everything", danger: true });
     if (!ok) return;
-    try { const result = await resetData(); if (result.pending) { toast('Records cleared; task-history recovery pending. Retry in Settings.'); return; } }
+    let pending = false;
+    try { pending = (await resetData()).pending; }
     catch (error) { toast(error.message); return; }
+    // Tasks, timeline and settings are cleared even when the ledger retry is pending;
+    // still tidy the UI so the sheet closes and the list refreshes.
     settings = store.resetSettings();
     closeSheet();
     onChanged(settings);
-    toast("Everything reset");
+    toast(pending ? 'Everything reset. Task-history recovery is pending — Retry in Settings.' : 'Everything reset');
   });
   resetRow.append(resetLbl, resetBtn);
   dangerSec.appendChild(resetRow);
