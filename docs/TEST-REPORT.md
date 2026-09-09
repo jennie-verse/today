@@ -94,3 +94,17 @@
 - 상세 편집의 AM/PM 선택이 입력 문자열의 기존 접미사를 명시적으로 바꾸며, 빈 제목·종료 추가/삭제·삭제 중 중복 제출 방지 흐름을 다시 확인했다.
 - Node 테스트 65개와 JavaScript 문법 검사 통과. 격리 Chromium에서 동기화·백업·복원·충돌·반응형 회귀, AM/PM 변경, 6단계 글자 크기와 가로 넘침, Service Worker 오프라인 재실행을 확인했다. 페이지 오류는 없었다.
 - Browser plugin not available; bundled Playwright Chromium을 사용했다. 실제 iPhone/iPad Safari 및 실계정 동기화는 미검증이다.
+
+## 2026-09-08 검토 반영 (reviewfix)
+
+빌드 `2026.09.08-reviewfix1`. 다중 에이전트 코드 검토에서 확인된 항목을 수정했다.
+
+- **정렬**: `2026.09.08-consistency1`에서 절대 instant 우선으로 바꿨던 Timeline·Markdown 정렬을 계획 §8 순서(표시 시계 시각 → 절대 instant → createdAt → id)로 되돌렸다. 일반적인 하루는 결과가 같고, DST 반복 시각·이동 중 시간대 혼재 날짜에서만 표시 순서가 바뀐다(양쪽 UTC 오프셋은 계속 표시).
+- **AM/PM**: 입력 문자열의 접미사와 AM/PM 선택창이 서로 다르면 조용히 한쪽을 고르지 않고 오류를 표시한다. 선택창은 접미사가 없을 때만 채운다.
+- **빠른 입력**: 미래 날짜에는 과거 문구 대신 "미래" 문구를 표시하고 Start를 숨긴다. 날짜 입력에 `max`(오늘)를 둔다. DST 반복 시각은 막다른 오류 대신 상세 입력의 오프셋 선택으로 안내한다.
+- **포커스**: 편집·삭제·삭제 취소 후 조작한 행(또는 입력창)으로 키보드/VoiceOver 포커스를 되돌린다(§U03).
+- **스크롤**: Tasks↔Timeline 탭 왕복과 Timetable/List 전환에서 스크롤 위치를 유지하고, 최초 진입·명시적 날짜 이동에서만 현재 시각으로 스크롤한다.
+- **내보내기 미리보기**: 진행 중 항목 수와 종료 미포함 설명을 §9대로 표시하고, 배경 변경 시 재계산한다. 복사·새로고침 오류는 별도 줄에 표시한다.
+- **복원 회복**: localStorage 쓰기 실패가 Export/Import를 영구히 막지 않도록 tombstone·ledger 갱신을 감싸고 pending 표식은 항상 정리한다. "Retry restore" 버튼은 실제 pending 상태에서만 노출한다. Reset이 pending으로 끝나도 시트를 닫고 화면을 갱신한다. DB 업그레이드 차단 시에는 잘못된 "task-history recovery" 토스트를 띄우지 않는다.
+- **Journal**: 백업 복원으로 할 일이 어떤 날짜에도 투영되지 않게 바뀌면 예전 날짜의 Journal 기록에 삭제 표식을 남긴다(일반 편집 경로와 동일).
+- Node 테스트 65개와 JavaScript 문법 검사 통과. 격리 Chromium(America/Chicago)에서 위 흐름과 2026-11-01 DST 반복 시각, Asia/Seoul·Asia/Kolkata 시간대 변환을 확인했다. 페이지 오류 없음. 실제 iPhone/iPad Safari와 실계정 비공개 Sync는 미검증.
