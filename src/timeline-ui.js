@@ -37,7 +37,7 @@ export async function initTimeline({ onTasksVisible = () => {} } = {}) {
   const panel = el('section', 'timeline-panel'); panel.id = 'timeline-panel'; panel.hidden = true;
   const state = { date: dateInZone(), entries: [], conflicts: [], view: getSettings().timelineView || 'timetable', tab: 'tasks', revision: 0 };
   const header = el('div', 'timeline-toolbar');
-  const date = el('input', 'timeline-date'); date.type = 'date'; date.value = state.date; date.max = dateInZone(); date.setAttribute('aria-label', 'Timeline date');
+  const date = el('input', 'timeline-date'); date.type = 'date'; date.value = state.date; date.setAttribute('aria-label', 'Timeline date');
   const today = button('Today', () => changeDate(dateInZone()), 'btn ghost');
   header.append(button('‹', () => changeDate(shiftDate(state.date, -1)), 'ico'), date, button('›', () => changeDate(shiftDate(state.date, 1)), 'ico'), today);
   header.firstChild.setAttribute('aria-label', 'Previous day'); header.children[2].setAttribute('aria-label', 'Next day');
