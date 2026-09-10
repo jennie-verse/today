@@ -118,3 +118,11 @@
 - "Add end time"는 전폭 막대 대신 자동 폭 소형 pill.
 - 기록 카드 패딩·목록 간격 축소, 다이얼로그 입력 40px. 입력·선택창은 16px 유지.
 - `elementFromPoint`로 탭·칩·Save/Start·행 편집의 44px 탭 영역 확인. 6단계 글자 크기(6·8·17px)×List/Timetable/다이얼로그에서 가로 넘침 없음. 자동 테스트 65개 통과. 공개 배포본 CSS 해시 로컬 일치, Timeline 생성/편집/내보내기/삭제 콘솔 오류 0.
+
+## 2026-09-10 미래 시각 허용 · Today 구분선 제거 (freeform-time)
+
+빌드 `2026.09.10-freeform-time`. 사용 중 확인된 두 가지를 수정했다.
+
+- **Timeline 미래 시각**: `reviseEntry`의 "That time is in the future. Check the date and AM/PM." 검증을 제거했다. 이제 활동의 시작·종료 시각을 현재 시각보다 앞이든 뒤든 자유롭게 입력하고 나중에 수정할 수 있다. 빠른 입력의 미래 날짜 안내 문구도 "다른 날짜에는 시각을 함께 적어주세요"로 통일하고 `future` 특수 처리를 없앴다. `allowFuture` 인자는 호환을 위해 시그니처에만 남겨두었다(동작에는 영향 없음).
+- **Today 3구간 구분선**: Today 목록은 Event → Task → Note 순서를 그대로 유지하되, 구간 사이의 `.tier-divider` 선(페이지 브레이크)을 그리지 않는다. CSS 규칙도 삭제했다.
+- Node 테스트 65개와 문법 검사 통과(미래 시각 테스트는 "허용"으로 갱신). 브라우저에서 Timeline에 23:59 미래 활동 저장이 오류 없이 되고, Today 목록에서 Event 다음에 Note가 구분선 없이 이어지는 것을 확인했다. 콘솔 오류 0. 실제 iPhone/iPad Safari는 미검증.

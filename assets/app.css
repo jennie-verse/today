@@ -166,7 +166,6 @@ a { color: inherit; }
 }
 
 /* ---------- Today 3-tier divider (plan §3-2) ---------- */
-.tier-divider { height: 1px; background: var(--line); margin: 4px 6px; }
 
 /* ---------- Row "⋯" menu (plan §3-6) ---------- */
 .menu-list { display: flex; flex-direction: column; gap: 2px; }

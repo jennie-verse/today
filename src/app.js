@@ -724,16 +724,11 @@ function render() {
   if (!slots.length) {
     slotsHost.appendChild(node("div", "slot empty", "Nothing in Today — add a task or move one from Someday"));
   } else {
-    // 3-tier sort (plan §3-2): Event -> Task -> Note, with a subtle divider
-    // drawn between tiers. Move up/down only reorders within the tierList
-    // the row belongs to.
+    // 3-tier sort (plan §3-2): Event -> Task -> Note. The tiers order the
+    // list but are not separated by any divider. Move up/down only reorders
+    // within the tierList the row belongs to.
     const tiered = sortTodayTiers(slots);
-    let lastTier = null;
     tiered.forEach(({ task, tier }) => {
-      if (lastTier !== null && tier !== lastTier) {
-        slotsHost.appendChild(node("div", "tier-divider"));
-      }
-      lastTier = tier;
       const tierList = tiered.filter((r) => r.tier === tier).map((r) => r.task);
       const box = node("div", "slot");
       box.appendChild(taskRow(task, { context: "today", tierList }));

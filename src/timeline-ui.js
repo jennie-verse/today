@@ -96,8 +96,8 @@ export async function initTimeline({ onTasksVisible = () => {} } = {}) {
     try {
       const parsed = parseQuick(raw);
       const onToday = selectedDate === dateInZone(now);
-      if (parsed.startMinutes === null && !onToday) throw new Error(selectedDate > dateInZone(now) ? 'That date is in the future. Record it once it happens, or add a time.' : 'Add a time when recording a past day.');
-      if (running && !onToday) throw new Error('Use Save for past activities.');
+      if (parsed.startMinutes === null && !onToday) throw new Error('Add a time when recording a day other than today.');
+      if (running && !onToday) throw new Error('Use Save for a day other than today.');
       if (running && parsed.endMinutes !== null) throw new Error('Use Save for an activity with an end time.');
       let startedAt, endedAt;
       try {

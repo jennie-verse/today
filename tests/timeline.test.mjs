@@ -31,7 +31,8 @@ test('explicit running flag, zero-minute interval, future and inverted interval 
   const first=row({isRunning:true}); assert.equal(first.isRunning,true);
   const ended=reviseEntry({endedAt:first.startedAt},first,{now}); assert.equal(ended.isRunning,false);
   assert.throws(()=>row({endedAt:wallToIso('2026-09-08',480,zone)}),/End/);
-  assert.throws(()=>row({startedAt:wallToIso('2026-09-09',480,zone)}),/future/);
+  // A future time is allowed: the user may record and edit activities in either direction.
+  const future=row({startedAt:wallToIso('2026-09-09',480,zone)}); assert.equal(future.startDate,'2026-09-09');
   assert.throws(()=>validateEntry({...ended,isRunning:true}),/current/);
 });
 test('time zone conversion preserves wall times and rejects gaps without choosing repeated hours', () => {

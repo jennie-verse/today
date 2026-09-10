@@ -33,7 +33,8 @@ export function reviseEntry(draft, previous = null, { now = Date.now(), known = 
   };
   if (result.endedAt || result.deletedAt) result.isRunning = false;
   validateEntry(result);
-  if (!allowFuture && !result.deletedAt && Math.max(Date.parse(startedAt), Date.parse(endedAt || startedAt)) > Math.floor(now / 60000) * 60000) throw new Error('That time is in the future. Check the date and AM/PM.');
+  // A timeline time may be earlier or later than the current moment — the
+  // user records and edits activities freely in either direction.
   return result;
 }
 export const compareRevision = (a, b) => Date.parse(a.updatedAt) - Date.parse(b.updatedAt) || a.revisionId.localeCompare(b.revisionId);
