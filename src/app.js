@@ -14,7 +14,7 @@ import { openSettingsSheet } from "./settings.js";
 
 import { initTimeline } from './timeline-ui.js';
 import { saveEntry } from './timeline-store.js';
-import { zoneNow, isoAt } from './timeline-time.js';
+import { zoneNow, isoAt, formatClock as formatClockAmPm } from './timeline-time.js';
 import { recoverRestore } from './data-transfer.js';
 const $ = (id) => document.getElementById(id);
 
@@ -656,11 +656,12 @@ function openRowMenu(task, { context, tierList }) {
   $("sheet-host").appendChild(overlay);
 }
 
+// 00:00 is the all-day placeholder (no time set) and stays unadorned;
+// any real scheduled time gets the 12-hour AM/PM form used elsewhere.
 function formatClock(minutes) {
   const m = Number.isFinite(minutes) ? minutes : 0;
-  const h = Math.floor(m / 60);
-  const mm = m % 60;
-  return `${String(h).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+  if (m === 0) return "00:00";
+  return formatClockAmPm(m);
 }
 
 // Note has no checkbox (plan §1.3/§3-6) — a plain dash marker instead, kept

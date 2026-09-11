@@ -1,5 +1,5 @@
 // Keep VERSION in step with APP_BUILD in ./src/version.js.
-const VERSION = "2026.09.11-focushandoff1";
+const VERSION = "2026.09.11-eventampm1";
 const CACHE_NAME = `today-${VERSION}`;
 
 const APP_SHELL = [
