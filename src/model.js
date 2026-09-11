@@ -99,7 +99,7 @@ export function normalizeTask(draft) {
     // in Daybook (see journal-record.js / daybook's markdown.js "cancelled"
     // rule), not the app's own carryover behavior.
     soon: status === "today" ? !!draft.soon : false,
-    source: draft.source === "tide" ? "tide" : draft.source === "clip" ? "clip" : "manual",
+    source: draft.source === "tide" ? "tide" : draft.source === "clip" ? "clip" : draft.source === "focus" ? "focus" : "manual",
     createdAt: draft.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };

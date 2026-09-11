@@ -1,6 +1,6 @@
 import {
-  DEFAULT_SETTINGS,
-  normalizeTask, subtaskProgress, todayKey, taskType,
+  DEFAULT_SETTINGS, LIMITS,
+  normalizeTask, subtaskProgress, todayKey, taskType, dateKey, clampText,
   reconcileToday, todayCandidates, somedayTasks, todaySlotTasks,
   migrateOrder, sortTodayTiers, autoPromoteEvents, todayDoneTasks,
   nextOrder, somedayFiltered, switchTaskKind, splitNoteLines, tasksFromNoteLines,
@@ -13,6 +13,8 @@ import { toast, confirmDialog, announce } from "./ui.js";
 import { openSettingsSheet } from "./settings.js";
 
 import { initTimeline } from './timeline-ui.js';
+import { saveEntry } from './timeline-store.js';
+import { zoneNow, isoAt } from './timeline-time.js';
 import { recoverRestore } from './data-transfer.js';
 const $ = (id) => document.getElementById(id);
 
@@ -146,6 +148,14 @@ async function deferTask(task) {
   await store.putTask(next);
   toast(`Moved to Someday`);
   await refresh();
+}
+
+// Hands the task off to Focus (plan: today<->focus handoff) — opens Focus
+// with the title pre-filled so the user doesn't retype it there. Today keeps
+// its own copy of the task untouched; Focus decides what to do with it.
+function sendToFocus(task) {
+  const params = new URLSearchParams({ task: task.title, from: "today", taskId: task.id });
+  location.href = `../focus/?${params.toString()}`;
 }
 
 async function deleteTask(task) {
@@ -599,6 +609,9 @@ function openRowMenu(task, { context, tierList }) {
 
   const kind = taskType(task);
   body.appendChild(menuItemButton("Edit", act(() => openTaskEditor(task))));
+  if (context !== "done") {
+    body.appendChild(menuItemButton("Send to Focus", act(() => sendToFocus(task))));
+  }
   if (context !== "done" && kind === "task") {
     body.appendChild(menuItemButton("Edit subtasks", act(() => openSubtaskEditor(task))));
   }
@@ -912,13 +925,38 @@ function handleUrlIntake() {
   try { params = new URLSearchParams(location.search); } catch { return; }
   const add = params.get("add");
   if (add == null) return;
+  const fromParam = params.get("from");
+  const startedAtRaw = params.get("startedAt");
+  const endedAtRaw = params.get("endedAt");
   try { history.replaceState({}, "", location.pathname + location.hash); } catch { /* ignore */ }
   if (!add.trim()) return;
+
+  // Focus hands off a finished session, not a new someday item — it already
+  // knows its own start/end, so this creates a completed Done task plus a
+  // matching Timeline entry instead of running the NL date parser on it.
+  const startedAtMs = startedAtRaw ? Date.parse(startedAtRaw) : NaN;
+  const endedAtMs = endedAtRaw ? Date.parse(endedAtRaw) : NaN;
+  if (fromParam === "focus" && Number.isFinite(startedAtMs) && Number.isFinite(endedAtMs)) {
+    const title = clampText(add, LIMITS.title);
+    if (!title) return;
+    const zone = zoneNow();
+    store.putTask(normalizeTask({
+      title, type: "task", status: "done", order: nextOrder(state.tasks, "done"),
+      doneAt: new Date(endedAtMs).toISOString(), doneDate: dateKey(new Date(endedAtMs)), source: "focus",
+    }))
+      .then(() => saveEntry({
+        title: clampText(add, 140),
+        startedAt: isoAt(startedAtMs, zone), endedAt: isoAt(endedAtMs, zone), timeZone: zone, isRunning: false,
+      }, { allowFuture: true }).catch(() => { /* Timeline entry is best-effort; the Done task above is already saved */ }))
+      .then(refresh)
+      .then(() => toast("Logged from Focus"));
+    return;
+  }
+
   const parsed = parseNaturalLanguage(add, { now: new Date() });
   // clip readiness (plan §5/stage 2 prep): accept ?from=clip the same way
   // ?from=tide is already accepted. clip doesn't exist yet — inert until it
   // does, but today-side handling is ready.
-  const fromParam = params.get("from");
   const source = fromParam === "tide" ? "tide" : fromParam === "clip" ? "clip" : "manual";
   const type = Number.isFinite(parsed.scheduledAtMinutes) ? "event" : "task";
   store.putTask(normalizeTask({
