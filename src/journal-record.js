@@ -58,6 +58,7 @@ export function taskToJournalRecord(task, options = {}) {
     data: {
       type: task.type === "note" || task.type === "event" ? task.type : "task",
       done: task.status === "done",
+      soon: task.status === "today" && task.soon === true,
       hasTime: Number.isFinite(task.scheduledAtMinutes),
       subtaskCount: subtasks.length,
       subtaskDoneCount: subtasks.filter((s) => s.done).length,

@@ -90,6 +90,15 @@ export function normalizeTask(draft) {
     doneAt: status === "done" ? (draft.doneAt || new Date().toISOString()) : null,
     doneDate: status === "done" ? (draft.doneDate || dateKey(new Date())) : null,
     subtasks,
+    // "Soon" — not urgent enough to be a must-do-today task, but should stay
+    // visible in Today (not buried in Someday) as a reminder. Only meaningful
+    // while status === "today"; cleared whenever the task leaves Today
+    // (Someday/Done), since it re-enters as a plain item if promoted again.
+    // Carried-over tasks keep rolling forward via reconcileToday like any
+    // other Today task — the flag only changes how an unfinished day renders
+    // in Daybook (see journal-record.js / daybook's markdown.js "cancelled"
+    // rule), not the app's own carryover behavior.
+    soon: status === "today" ? !!draft.soon : false,
     source: draft.source === "tide" ? "tide" : draft.source === "clip" ? "clip" : "manual",
     createdAt: draft.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),

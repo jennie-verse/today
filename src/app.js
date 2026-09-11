@@ -132,6 +132,15 @@ async function promoteTask(task) {
   await refresh();
 }
 
+// "Soon" toggle (not today's must-do, but should stay visible instead of
+// disappearing into Someday). Only meaningful while in Today — see model.js.
+async function toggleSoon(task) {
+  const next = normalizeTask({ ...task, soon: !task.soon });
+  await store.putTask(next);
+  toast(next.soon ? "Marked as Soon" : "Unmarked");
+  await refresh();
+}
+
 async function deferTask(task) {
   const next = normalizeTask({ ...task, status: "someday", order: nextOrder(state.tasks, "someday"), todayDate: null });
   await store.putTask(next);
@@ -596,6 +605,7 @@ function openRowMenu(task, { context, tierList }) {
   if (context === "today") {
     body.appendChild(menuItemButton("Move up", act(() => moveTask(task, -1, tierList))));
     body.appendChild(menuItemButton("Move down", act(() => moveTask(task, 1, tierList))));
+    body.appendChild(menuItemButton(task.soon ? "Unmark Soon" : "Mark as Soon", act(() => toggleSoon(task))));
     body.appendChild(menuItemButton("Move to Someday", act(() => deferTask(task))));
   } else if (context === "someday") {
     body.appendChild(menuItemButton("Move up", act(() => moveTask(task, -1, tierList))));
@@ -641,7 +651,7 @@ function formatClock(minutes) {
 function taskRow(task, { context, tierList = [] }) {
   const wrap = node("div");
   const kind = taskType(task);
-  const row = node("div", "task-row" + (task.status === "done" ? " done" : "") + ` type-${kind}`);
+  const row = node("div", "task-row" + (task.status === "done" ? " done" : "") + (task.soon ? " soon" : "") + ` type-${kind}`);
 
   if (kind === "note") {
     row.appendChild(node("span", "kind-mark", "—"));
@@ -672,6 +682,11 @@ function taskRow(task, { context, tierList = [] }) {
     titleEl.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
   }
   main.appendChild(titleEl);
+  if (context === "today" && task.soon) {
+    const soonBadge = node("span", "soon-badge", "Soon");
+    soonBadge.setAttribute("aria-label", "Marked as soon — not required today, but kept visible as a reminder");
+    main.appendChild(soonBadge);
+  }
   const progress = subtaskProgress(task);
   if (progress.total) main.appendChild(node("div", "sub-progress", `${progress.done}/${progress.total} subtasks`));
   row.appendChild(main);

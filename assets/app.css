@@ -141,6 +141,13 @@ a { color: inherit; }
 .task-row .title { font-size: calc(var(--f) * 1.05); word-break: break-word; }
 .task-row.done .title { color: var(--text-3); text-decoration: line-through; }
 .task-row .sub-progress { font-size: calc(var(--f) * 0.82); color: var(--text-3); margin-top: 2px; }
+.task-row .soon-badge {
+  display: inline-block; margin-top: 3px; padding: 1px 7px; border-radius: 999px;
+  font-size: calc(var(--f) * 0.78); font-weight: 700; line-height: 1.6;
+  color: var(--text); background: color-mix(in srgb, var(--peach) 32%, var(--card));
+  border: 1px solid var(--peach);
+}
+.task-row.soon .title { font-style: italic; }
 .task-row .actions { display: flex; gap: 2px; flex: 0 0 auto; }
 .task-row .actions button {
   /* Same 44px-touch-target-but-visually-smaller trick as .check above: the
