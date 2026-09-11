@@ -296,6 +296,10 @@ export function switchTaskKind(task, kind) {
   if (!TYPES.has(kind)) throw new Error(`Unknown kind: ${kind}`);
   const draft = { ...task, type: kind };
   if (kind === "note") draft.subtasks = [];
+  // Soon only means something for a plain Task (it's what keeps Daybook from
+  // marking it cancelled); dropping it here means a Note/Event never
+  // silently carries a leftover flag that would resurface if switched back.
+  if (kind !== "task") draft.soon = false;
   return normalizeTask(draft);
 }
 

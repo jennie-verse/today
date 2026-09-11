@@ -605,7 +605,13 @@ function openRowMenu(task, { context, tierList }) {
   if (context === "today") {
     body.appendChild(menuItemButton("Move up", act(() => moveTask(task, -1, tierList))));
     body.appendChild(menuItemButton("Move down", act(() => moveTask(task, 1, tierList))));
-    body.appendChild(menuItemButton(task.soon ? "Unmark Soon" : "Mark as Soon", act(() => toggleSoon(task))));
+    // Soon only changes how an unfinished plain Task is judged in Daybook
+    // (open vs. cancelled) — a Note is never marked cancelled there and an
+    // Event always shows its time badge, so the toggle would be a no-op for
+    // either and is hidden to avoid a confusing dead option.
+    if (kind === "task") {
+      body.appendChild(menuItemButton(task.soon ? "Unmark Soon" : "Mark as Soon", act(() => toggleSoon(task))));
+    }
     body.appendChild(menuItemButton("Move to Someday", act(() => deferTask(task))));
   } else if (context === "someday") {
     body.appendChild(menuItemButton("Move up", act(() => moveTask(task, -1, tierList))));
@@ -651,7 +657,7 @@ function formatClock(minutes) {
 function taskRow(task, { context, tierList = [] }) {
   const wrap = node("div");
   const kind = taskType(task);
-  const row = node("div", "task-row" + (task.status === "done" ? " done" : "") + (task.soon ? " soon" : "") + ` type-${kind}`);
+  const row = node("div", "task-row" + (task.status === "done" ? " done" : "") + (kind === "task" && task.soon ? " soon" : "") + ` type-${kind}`);
 
   if (kind === "note") {
     row.appendChild(node("span", "kind-mark", "—"));
@@ -682,7 +688,7 @@ function taskRow(task, { context, tierList = [] }) {
     titleEl.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
   }
   main.appendChild(titleEl);
-  if (context === "today" && task.soon) {
+  if (context === "today" && kind === "task" && task.soon) {
     const soonBadge = node("span", "soon-badge", "Soon");
     soonBadge.setAttribute("aria-label", "Marked as soon — not required today, but kept visible as a reminder");
     main.appendChild(soonBadge);
