@@ -201,8 +201,41 @@ function openTaskEditor(task) {
   input.style.width = "100%";
   if (isNote) { input.style.minHeight = "120px"; input.style.resize = "vertical"; }
   input.setAttribute("aria-label", isNote ? "Note text" : "Task title");
-  const hint = node("p", "hint", isNote ? "" : "You can include a date/time, e.g. \"tomorrow 9am\".");
+  const hint = node("p", "hint", isNote ? "" : "You can include a date, e.g. \"tomorrow\", to reschedule.");
   body.append(input, hint);
+
+  // Explicit, visible time control — separate from the free-text date
+  // parser above. A Task keeps its kind as Task even with a time set (no
+  // time badge in Today; the time only matters for Timeline later). Only
+  // Task/Event get this row; a Note has no time concept.
+  const kind = taskType(task);
+  let timeInput = null;
+  if (!isNote) {
+    const timeRow = node("div", "field-row");
+    timeRow.style.display = "flex";
+    timeRow.style.alignItems = "center";
+    timeRow.style.gap = "8px";
+    timeRow.style.marginTop = "10px";
+    const timeLabel = node("label", "", kind === "event" ? "Time" : "Start time");
+    timeLabel.style.flex = "0 0 auto";
+    timeInput = document.createElement("input");
+    timeInput.type = "time";
+    timeInput.value = minutesToTimeValue(task.scheduledAtMinutes);
+    // Global input[type="time"] CSS sets width:100% for the single-column
+    // forms elsewhere; override to a fixed width here since this one shares
+    // its row with a label and a Clear button.
+    timeInput.style.flex = "0 0 auto";
+    timeInput.style.width = "140px";
+    const timeInputId = "task-editor-time-" + task.id;
+    timeInput.id = timeInputId;
+    timeLabel.setAttribute("for", timeInputId);
+    const clearTimeBtn = node("button", "btn ghost", "Clear");
+    clearTimeBtn.type = "button";
+    clearTimeBtn.setAttribute("aria-label", "Clear time");
+    clearTimeBtn.addEventListener("click", () => { timeInput.value = ""; });
+    timeRow.append(timeLabel, timeInput, clearTimeBtn);
+    body.appendChild(timeRow);
+  }
 
   const foot = node("div", "sheet-foot");
   const cancelBtn = node("button", "btn ghost", "Cancel");
@@ -225,15 +258,16 @@ function openTaskEditor(task) {
         next = normalizeTask({ ...task, title: raw, type: "note" });
       } else {
         const parsed = parseNaturalLanguage(raw, { now: new Date() });
-        // Renaming must keep the event kind and its existing schedule.
-        // A newly entered date/time updates only the supplied schedule fields.
-        const type = Number.isFinite(parsed.scheduledAtMinutes) ? "event" : taskType(task);
+        // Editing never changes kind — a Task stays a Task even if the text
+        // or the time field includes a time; only "Change type" switches
+        // kind. The time field is the single source of truth for the time
+        // (empty = cleared); the text is only ever read for a date phrase.
         next = normalizeTask({
           ...task,
           title: parsed.title,
-          type,
+          type: taskType(task),
           scheduledFor: parsed.scheduledFor ?? task.scheduledFor,
-          scheduledAtMinutes: parsed.scheduledAtMinutes ?? task.scheduledAtMinutes,
+          scheduledAtMinutes: timeInput ? timeValueToMinutes(timeInput.value) : task.scheduledAtMinutes,
         });
       }
       await store.putTask(next);
@@ -664,6 +698,20 @@ function formatClock(minutes) {
   return formatClockAmPm(m);
 }
 
+// <input type="time"> always takes/returns 24-hour "HH:MM" regardless of
+// the visitor's locale, independent of the AM/PM display used elsewhere.
+function minutesToTimeValue(minutes) {
+  if (!Number.isFinite(minutes)) return "";
+  const h = Math.floor(minutes / 60) % 24;
+  const m = minutes % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+function timeValueToMinutes(value) {
+  const m = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(String(value || ""));
+  if (!m) return null;
+  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+}
+
 // Note has no checkbox (plan §1.3/§3-6) — a plain dash marker instead, kept
 // even after archiving to Done. Event always shows a time badge in place of
 // the checkbox: its scheduledAtMinutes when set, otherwise 00:00 as the
@@ -888,7 +936,11 @@ function wireAddBar() {
     submit.disabled = true;
     try {
       const parsed = isNote ? null : parseNaturalLanguage(raw, { now: new Date() });
-      const type = isNote ? "note" : Number.isFinite(parsed.scheduledAtMinutes) ? "event" : kind;
+      // Kind is whatever chip the user picked — never silently flipped to
+      // "event" just because the typed text happened to include a time.
+      // A Task with a start time is still a Task (no time badge in Today);
+      // only the Event chip produces an Event.
+      const type = isNote ? "note" : kind;
       const task = normalizeTask({
         title: isNote ? raw : parsed.title,
         type,
