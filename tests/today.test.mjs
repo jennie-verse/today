@@ -80,6 +80,42 @@ test('reconcileToday rolls yesterday leftovers forward into today and leaves eve
   assert.equal(fresh.todayDate, '2026-08-26');
 });
 
+test('reconcileToday never rolls Event/Note forward — they are finalized (removed) instead, while a plain or Soon Task still rolls', () => {
+  const tasks = [
+    model.normalizeTask({ title: 'stale task', type: 'task', status: 'today', todayDate: '2026-08-25' }),
+    model.normalizeTask({ title: 'stale soon task', type: 'task', status: 'today', todayDate: '2026-08-25', soon: true }),
+    model.normalizeTask({ title: 'stale event', type: 'event', status: 'today', todayDate: '2026-08-25' }),
+    model.normalizeTask({ title: 'stale note', type: 'note', status: 'today', todayDate: '2026-08-25' }),
+    model.normalizeTask({ title: 'fresh event', type: 'event', status: 'today', todayDate: '2026-08-26' }),
+  ];
+  const { tasks: next, rolled, finalized } = model.reconcileToday(tasks, '2026-08-26');
+  assert.deepEqual(rolled.sort(), [tasks[0].id, tasks[1].id].sort());
+  assert.deepEqual(finalized.map((t) => t.title).sort(), ['stale event', 'stale note']);
+  // Finalized rows are dropped from `next` entirely — they never reappear in Today.
+  assert.equal(next.some((t) => t.title === 'stale event'), false);
+  assert.equal(next.some((t) => t.title === 'stale note'), false);
+  // Finalized rows keep their original todayDate untouched, so the caller can
+  // still project a Journal record onto the day they were actually open for.
+  assert.equal(finalized.find((t) => t.title === 'stale event').todayDate, '2026-08-25');
+  // Rolled rows move to the new day and stay in `next`.
+  const rolledTask = next.find((t) => t.title === 'stale task');
+  assert.equal(rolledTask.todayDate, '2026-08-26');
+  // A fresh (already-today) Event is left completely alone.
+  assert.equal(next.find((t) => t.title === 'fresh event').todayDate, '2026-08-26');
+});
+
+test('journalDateFor also projects a Canceled task, keyed by canceledDate', () => {
+  assert.equal(journalDateFor(model.normalizeTask({ title: 'a', status: 'canceled', canceledDate: '2026-08-26' })), '2026-08-26');
+});
+
+test('taskToJournalRecord marks data.canceled for a Canceled task, and clears it (like soon) for every other status', () => {
+  const canceled = model.normalizeTask({ title: 'a', status: 'canceled', canceledDate: '2026-08-26' });
+  assert.equal(taskToJournalRecord(canceled).data.canceled, true);
+  assert.equal(taskToJournalRecord(canceled).data.done, false);
+  const done = model.normalizeTask({ title: 'a', status: 'done', doneDate: '2026-08-26' });
+  assert.equal(taskToJournalRecord(done).data.canceled, false);
+});
+
 test('today candidates are Someday tasks scheduled for today, and are never Today tasks', () => {
   const tasks = [
     model.normalizeTask({ title: 'a', status: 'someday', scheduledFor: '2026-08-26' }),

@@ -173,12 +173,19 @@ async function queueTaskChange(next, previous) {
   }
 }
 
-// Called by reconciliation when a task rolls forward into today's date
-// unfinished. Projects a fresh "task" record onto the new day so Daybook
-// keeps showing it (still-open tasks render struck through there) without
-// touching — let alone tombstoning — the record(s) already written for the
-// earlier day(s) it was open. Not a discrete user action, so no
-// task-activity entry is logged for it.
+// Called by reconciliation for two related-but-distinct cases, both "not a
+// discrete user action" so neither logs a task-activity entry:
+//   1. A plain Task rolls forward into today's date still unfinished —
+//      projects a fresh "task" record onto the new day so Daybook keeps
+//      showing it (still-open tasks render struck through there) without
+//      touching — let alone tombstoning — the record(s) already written for
+//      the earlier day(s) it was open. A "soon" Task is the exception: it's
+//      expected to roll forward unfinished, so no record is written for a day
+//      it merely rolled through — Daybook only hears about it once it's Done.
+//   2. An Event/Note is "finalized" (see model.js's reconcileToday) — this
+//      writes its last-known state to the day it was still open for, using
+//      `task.todayDate`/`journalDateFor` exactly as-is since the caller has
+//      not mutated the record. The caller deletes it locally right after.
 export async function recordRollover(tasks) {
   if (!isJournalEnabled() || !tasks?.length) return;
   const client = await getClient();
@@ -186,6 +193,7 @@ export async function recordRollover(tasks) {
   const includeContent = isJournalContentEnabled();
   const includeSubtaskText = isSubtaskTextEnabled();
   for (const task of tasks) {
+    if (task.type === "task" && task.soon) continue;
     const day = journalDateFor(task);
     if (!day) continue;
     try {

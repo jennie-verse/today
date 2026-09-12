@@ -51,7 +51,8 @@
 - **Edit subtasks** — Task에만 보입니다.
 - **Move up / Move down** — Today와 Someday 모두에서 보입니다. Today에서는 **같은 덩어리(Event/Task/Note) 안에서만** 순서를 바꾸고, Someday에서는 현재 필터(All/Tasks/Notes)로 보이는 목록 안에서 순서를 바꿉니다. Event는 항상 시각순이라 이동 메뉴가 순서에 영향을 주지 않습니다.
 - **Move to Someday / Move to Today** — 현재 위치에 따라 하나만 보입니다.
-- **Archive to Done** — Note에만 보입니다. Note는 체크박스가 없어 이 메뉴로만 Done으로 보낼 수 있습니다.
+- **Mark as Done** — Note와 Event에 보입니다. 둘 다 체크박스가 없어 이 메뉴로만 Done으로 보낼 수 있습니다(Task는 왼쪽 원 체크박스를 씁니다).
+- **Mark as Cancel** — Today에서 Task/Event에만 보입니다. 그날의 Today에서 완전히 빠지고(다음 날로 이어지지 않음), Daybook에는 취소됨으로 기록이 남습니다. Note에는 취소 개념이 없습니다.
 - **종류 바꾸기** — Task ⇄ Note ⇄ Event로 바꿉니다. Done에는 보이지 않습니다.
   - **Task → Note**로 바꾸면 하위 항목이 있을 경우 "하위 항목 N개가 사라집니다" 확인을 먼저 받습니다. 확인하면 하위 항목은 사라집니다(Note는 하위 항목 개념이 없기 때문).
   - **Note → Task**는 하위 항목을 새로 만들어내지 않습니다(빈 상태로 시작).
@@ -68,12 +69,14 @@
 
 ## 완료·되돌리기
 
-- Task/Event는 항목 왼쪽의 원을 누르면 완료(Done)로 이동합니다. Note는 체크박스가 없으므로 `⋯` → Archive to Done을 사용합니다.
+- Task는 항목 왼쪽의 원을 누르면 완료(Done)로 이동합니다. Note/Event는 체크박스가 없으므로 `⋯` → Mark as Done을 사용합니다.
 - Done에서 `⋯` → Reopen을 누르면 Someday로 돌아옵니다(Today로 자동 복귀하지 않습니다).
 
 ## 자정이 지나면
 
-앱을 다시 열면 어제 Today의 미완료 항목은 오늘로 이어집니다. 개수 제한은 없습니다.
+- **Task**(일반) — 어제 Today의 미완료 항목은 오늘로 그대로 이어집니다. 개수 제한은 없습니다. Daybook에는 그날 취소된 것으로 기록됩니다.
+- **Task(Soon 표시)** — 마찬가지로 오늘로 이어지지만, 아직 처리 전인 그 하루에 대해서는 Daybook에 기록을 남기지 않습니다(완료되거나 취소된 날에만 기록됩니다).
+- **Event/Note** — 다음 날로 이어지지 않습니다. 완료·취소 여부와 관계없이 그날 Today에서 빠지고, 그날의 Daybook에 마지막 상태 그대로 기록됩니다.
 
 ## 백업(Backup)·복원(Restore)
 

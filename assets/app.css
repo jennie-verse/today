@@ -138,11 +138,17 @@ a { color: inherit; }
   border-right: 2px solid #fff; border-bottom: 2px solid #fff; transform: rotate(40deg);
 }
 .task-row .main { flex: 1; min-width: 0; }
+/* Soon badge floats before the title so ordinary text wrapping flows the
+   title around it on the same line — only a long title wraps to its own
+   next line, the badge itself never stacks above the content.
+   display:flow-root keeps the float's height inside .main-line1 instead of
+   bleeding into .sub-progress underneath. */
+.task-row .main-line1 { display: flow-root; }
 .task-row .title { font-size: calc(var(--f) * 1.05); word-break: break-word; }
 .task-row.done .title { color: var(--text-3); text-decoration: line-through; }
 .task-row .sub-progress { font-size: calc(var(--f) * 0.82); color: var(--text-3); margin-top: 2px; }
 .task-row .soon-badge {
-  display: inline-block; margin-top: 3px; padding: 1px 7px; border-radius: 999px;
+  float: left; margin: 2px 6px 2px 0; padding: 1px 7px; border-radius: 999px;
   font-size: calc(var(--f) * 0.78); font-weight: 700; line-height: 1.6;
   color: var(--text); background: color-mix(in srgb, var(--peach) 32%, var(--card));
   border: 1px solid var(--peach);

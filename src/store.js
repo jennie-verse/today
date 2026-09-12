@@ -88,6 +88,7 @@ function reqToPromise(req) {
 let journalTaskChangeHook = null;
 let syncTaskChangeHook = null;
 let hookSuppressed = false;
+let journalHookSuppressed = false;
 
 export function setJournalTaskChangeHook(fn) {
   journalTaskChangeHook = typeof fn === "function" ? fn : null;
@@ -102,10 +103,22 @@ export async function withoutTaskHook(fn) {
   finally { hookSuppressed = false; }
 }
 
+// Suppresses only the Journal hook (sync still fires normally). Used when a
+// mutation's Journal record is written by hand instead of by the generic
+// next/previous-status inference — e.g. finalizing an Event/Note whose day
+// ended still unmarked: the item is deleted locally (and must still tombstone
+// for cross-device sync), but the Journal record it leaves behind is its
+// last-known state, not a deletion tombstone.
+export async function withoutJournalHook(fn) {
+  journalHookSuppressed = true;
+  try { return await fn(); }
+  finally { journalHookSuppressed = false; }
+}
+
 export function notifyTaskChange(next, previous) {
   if (hookSuppressed) return;
   if (syncTaskChangeHook) { try { syncTaskChangeHook(next, previous); } catch { /* sync never blocks a local save */ } }
-  if (journalTaskChangeHook) { try { journalTaskChangeHook(next, previous); } catch { /* journal-only, must not break saves */ } }
+  if (!journalHookSuppressed && journalTaskChangeHook) { try { journalTaskChangeHook(next, previous); } catch { /* journal-only, must not break saves */ } }
 }
 
 // ---------- tasks ----------

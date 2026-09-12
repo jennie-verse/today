@@ -33,6 +33,7 @@ function dayIso(dateKeyStr, minutes) {
 export function journalDateFor(task) {
   if (task.status === "today" && task.todayDate) return task.todayDate;
   if (task.status === "done" && task.doneDate) return task.doneDate;
+  if (task.status === "canceled" && task.canceledDate) return task.canceledDate;
   return null;
 }
 
@@ -58,6 +59,7 @@ export function taskToJournalRecord(task, options = {}) {
     data: {
       type: task.type === "note" || task.type === "event" ? task.type : "task",
       done: task.status === "done",
+      canceled: task.status === "canceled",
       soon: task.status === "today" && task.soon === true,
       hasTime: Number.isFinite(task.scheduledAtMinutes),
       subtaskCount: subtasks.length,

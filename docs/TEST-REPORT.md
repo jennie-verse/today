@@ -126,3 +126,15 @@
 - **Timeline 미래 시각**: `reviseEntry`의 "That time is in the future. Check the date and AM/PM." 검증을 제거했다. 이제 활동의 시작·종료 시각을 현재 시각보다 앞이든 뒤든 자유롭게 입력하고 나중에 수정할 수 있다. 빠른 입력의 미래 날짜 안내 문구도 "다른 날짜에는 시각을 함께 적어주세요"로 통일하고 `future` 특수 처리를 없앴다. Timeline 날짜 선택 입력의 `max`(오늘) 제한도 없애 미래 날짜를 직접 고를 수 있게 했다(이전 날짜/다음 날짜 화살표는 원래 제한이 없었다). `allowFuture` 인자는 호환을 위해 시그니처에만 남겨두었다(동작에는 영향 없음).
 - **Today 3구간 구분선**: Today 목록은 Event → Task → Note 순서를 그대로 유지하되, 구간 사이의 `.tier-divider` 선(페이지 브레이크)을 그리지 않는다. CSS 규칙도 삭제했다.
 - Node 테스트 65개와 문법 검사 통과(미래 시각 테스트는 "허용"으로 갱신). 브라우저에서 (1) Timeline 오늘 날짜에 23:59 미래 활동 저장, (2) 날짜 선택으로 미래 날짜(2026-12-25)로 이동해 09:30 활동 저장, (3) 그 활동을 상세 편집으로 23:45로 수정 저장이 모두 "in the future" 오류 없이 되는 것과, Today 목록에서 Event 다음에 Note가 구분선 없이 이어지는 것을 확인했다. 콘솔 오류 0. 실제 iPhone/iPad Safari는 미검증.
+
+## 2026-09-12 Mark as Cancel · 자정 처리 재정의 · Soon 배지 위치 (markcancel1)
+
+빌드 `2026.09.12-markcancel1`. Today/Daybook의 자정 처리와 완료/취소 표시 방식을 사용자가 정리한 표(task/event/note × done/undone/canceled × 다음 날 노출 여부 × Daybook 기록 여부)에 맞춰 다시 정의했다.
+
+- **새 상태 `canceled`**: Task/Event에 "Mark as Cancel" 메뉴가 생겼다(Today 컨텍스트에서만, Someday에는 없음). 취소하면 그날 Today에서 즉시 빠지고(다음 날로 이어지지 않음), Daybook에는 취소됨으로 남는다(Task는 `[-] ~~제목~~`, Event는 `~~제목~~`로 취소가 아닌 열린 이벤트와 구분). 앱 안에는 별도 "Canceled" 보관함이 없다 — 취소한 항목은 Daybook 기록에서만 다시 볼 수 있다(Delete와 차이점: Delete는 그날 기록 자체가 사라지고, Cancel은 "취소됨"으로 남는다).
+- **Event/Note는 더 이상 자정에 다음 날로 넘어가지 않는다**: 지금까지는 Task처럼 미완료 상태로 매일 굴러갔지만(daybook에 매일 "취소" 기록이 중복으로 쌓이는 부작용도 있었다), 이제는 그날 하루로 끝난다 — 완료·취소·미표시 여부와 관계없이 자정이 지나면 Today에서 조용히 빠지고, 그 항목이 열려 있던 마지막 날의 Daybook 기록에 마지막 상태 그대로 한 번만 남는다. Event에는 체크박스가 없으므로 `⋯` → **Mark as Done**을 새로 추가했다(Note의 기존 "Archive to Done"도 같은 이름으로 통일).
+- **일반 Task**(soon 아님)의 자정 처리는 기존 그대로다: 미완료면 다음 날로 이어지고, Daybook에는 그날 취소된 것으로 기록된다.
+- **Soon Task**는 다음 날로 이어지는 것은 그대로지만, 아직 처리되지 않은 채로 굴러가는 하루하루에 대해서는 Daybook에 기록을 남기지 않도록 바꿨다(완료되거나 취소된 날에만 기록). 예전에는 매일 "열린 상태"로 기록이 남았다.
+- **Soon 배지 위치**: 지금까지 항목 상자 아래, 제목 다음 줄에 표시되던 "Soon" 배지를 제목 앞으로 옮겨 같은 줄에 표시한다(제목이 길어 줄바꿈될 때만 배지 다음 줄로 넘어간다). `float`를 이용해 배지 주위로 제목이 자연스럽게 흐르도록 했다.
+- Delete는 기존과 동일하게 Today/Someday/Done, Task/Event/Note 모든 조합에서 이미 항상 노출되어 있었다(이번에 새로 추가한 것은 없음).
+- Today 자동 테스트 65→68개, Daybook 자동 테스트 65→66개 모두 통과. 브라우저(Chromium)로 (1) 긴 제목의 Task를 Today로 옮기고 Mark as Soon을 눌러 배지가 제목과 한 줄에 붙어 나오는 것, (2) Event를 추가한 뒤 `⋯` 메뉴에 Mark as Done/Mark as Cancel이 모두 보이는 것, (3) Mark as Cancel을 누르면 토스트와 함께 즉시 Today에서 빠지는 것을 확인했다. 콘솔 오류 0(페이지 자체 오류는 없음 — 로컬 정적 서버 환경에서 나타나는 무관한 스크립트 fetch 경고 1건은 기존에도 있던 것으로 이번 변경과 무관). 실제 iPhone/iPad Safari와 daybook 쪽 실기기 다중 기기 동기화(자정 경계에서 Event/Note가 실제로 소멸하고 Daybook에 정확히 한 번만 기록되는지)는 Pending — 직접 확인 필요.

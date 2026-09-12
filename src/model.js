@@ -56,10 +56,11 @@ export function makeId() {
 // ---------- task normalization ----------
 
 // A task's lifecycle lives entirely in `status`:
-//   'today'   — in today's list (unlimited) for `todayDate`
-//   'someday' — backlog; may carry a `scheduledFor` proposal (not a deadline)
-//   'done'    — completed; grouped by `doneDate`
-export const STATUSES = new Set(["today", "someday", "done"]);
+//   'today'    — in today's list (unlimited) for `todayDate`
+//   'someday'  — backlog; may carry a `scheduledFor` proposal (not a deadline)
+//   'done'     — completed; grouped by `doneDate`
+//   'canceled' — explicitly cancelled (Task/Event only); grouped by `canceledDate`
+export const STATUSES = new Set(["today", "someday", "done", "canceled"]);
 
 export function normalizeSubtask(draft) {
   const title = clampText(draft?.title, LIMITS.subtaskTitle);
@@ -98,6 +99,8 @@ export function normalizeTask(draft) {
     timelineEntryId: draft.timelineEntryId || null,
     doneAt: status === "done" ? (draft.doneAt || new Date().toISOString()) : null,
     doneDate: status === "done" ? (draft.doneDate || dateKey(new Date())) : null,
+    canceledAt: status === "canceled" ? (draft.canceledAt || new Date().toISOString()) : null,
+    canceledDate: status === "canceled" ? (draft.canceledDate || dateKey(new Date())) : null,
     subtasks,
     // "Soon" — not urgent enough to be a must-do-today task, but should stay
     // visible in Today (not buried in Someday) as a reminder. Only meaningful
@@ -130,19 +133,35 @@ export function canPromoteToToday() {
   return true;
 }
 
-// Reconciliation run on load: a task left over in Today from a previous day
-// rolls forward to today's date and stays in Today — nothing marked "today"
-// and left unfinished ever silently drops out of the list on its own.
+// Reconciliation run on load: a plain Task left over in Today from a
+// previous day rolls forward to today's date and stays in Today — nothing
+// marked "today" and left unfinished ever silently drops out of the list on
+// its own (a "soon" task rolls the same way; only whether Daybook gets a
+// record for that day differs — see journal.js's recordRollover).
+//
+// An Event or Note is different: it belongs to the specific day it was
+// scheduled/written for, not to "whatever day I get around to it," so it
+// never rolls forward. Once its day has passed while still unmarked, it is
+// "finalized" instead — removed from `tasks` here (the caller records its
+// last-known state to Daybook for the day it was still open, then deletes it
+// locally; see app.js's reconcile()).
 export function reconcileToday(tasks, todayDateKey) {
   const rolled = [];
-  const next = tasks.map((t) => {
+  const finalized = [];
+  const next = [];
+  for (const t of tasks) {
     if (t.status === "today" && t.todayDate !== todayDateKey) {
-      rolled.push(t.id);
-      return { ...t, todayDate: todayDateKey, updatedAt: new Date().toISOString() };
+      if (taskType(t) === "task") {
+        rolled.push(t.id);
+        next.push({ ...t, todayDate: todayDateKey, updatedAt: new Date().toISOString() });
+      } else {
+        finalized.push(t);
+      }
+    } else {
+      next.push(t);
     }
-    return t;
-  });
-  return { tasks: next, rolled };
+  }
+  return { tasks: next, rolled, finalized };
 }
 
 // "Today candidates" — Someday items whose scheduledFor is today. Never
@@ -340,6 +359,7 @@ export function tasksFromNoteLines(lines, sourceOrder) {
 export function inferTaskAction(next, previous) {
   if (!previous) return "created";
   if (!next) return "deleted";
+  if (previous.status !== "canceled" && next.status === "canceled") return "canceled";
   if (previous.status !== "done" && next.status === "done") return "completed";
   if (previous.status === "done" && next.status !== "done") return "reopened";
   if (previous.status !== "today" && next.status === "today") return "promoted";

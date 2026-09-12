@@ -29,7 +29,18 @@ async function loadTasks() {
 }
 
 async function reconcile() {
-  const { tasks, rolled } = reconcileToday(state.tasks, todayKey());
+  const { tasks, rolled, finalized } = reconcileToday(state.tasks, todayKey());
+  // Event/Note whose day ended still unmarked: never rolls forward — record
+  // its last-known state to the day it was still open for, then remove it
+  // locally. withoutJournalHook keeps the normal delete-tombstone from
+  // overwriting the record we just wrote by hand; sync still fires normally
+  // so the removal still propagates to other devices.
+  if (finalized.length) {
+    for (const task of finalized) {
+      await store.withoutJournalHook(() => store.deleteTaskById(task.id));
+    }
+    journal.recordRollover(finalized).catch(() => {});
+  }
   if (!rolled.length) { state.tasks = tasks; }
   else {
     const toWrite = tasks.filter((t) => rolled.includes(t.id));
@@ -141,6 +152,24 @@ async function toggleSoon(task) {
   const next = normalizeTask({ ...task, soon: !task.soon });
   await store.putTask(next);
   toast(next.soon ? "Marked as Soon" : "Unmarked");
+  await refresh();
+}
+
+// "Mark as Cancel" (Task/Event only — see openRowMenu). Distinct from
+// Delete: the task leaves Today for good (no rollover, per model.js) but
+// Daybook keeps a "cancelled" record of it for the day, instead of losing
+// the entry entirely the way a Delete's tombstone would.
+async function cancelTask(task) {
+  const next = normalizeTask({
+    ...task,
+    status: "canceled",
+    order: nextOrder(state.tasks, "canceled"),
+    todayDate: null,
+    canceledAt: new Date().toISOString(),
+    canceledDate: todayKey(),
+  });
+  await store.putTask(next);
+  toast("Cancelled");
   await refresh();
 }
 
@@ -710,6 +739,18 @@ function openRowMenu(task, { context, tierList }) {
     if (kind === "task") {
       body.appendChild(menuItemButton(task.soon ? "Unmark Soon" : "Mark as Soon", act(() => toggleSoon(task))));
     }
+    // Event has no checkbox (its leading marker is the time badge), so
+    // "Mark as Done" is its only path to Done — same route a Note's Archive
+    // action already uses (completeTask, gated purely on task.status).
+    if (kind === "event") {
+      body.appendChild(menuItemButton("Mark as Done", act(() => completeTask(task))));
+    }
+    // Mark as Cancel (Task/Event only, per spec — a Note has no cancelled
+    // concept in Daybook). Leaves Today for good, unlike an unfinished plain
+    // Task which keeps rolling forward.
+    if (kind === "task" || kind === "event") {
+      body.appendChild(menuItemButton("Mark as Cancel", act(() => cancelTask(task)), { danger: true }));
+    }
     body.appendChild(menuItemButton("Move to Someday", act(() => deferTask(task))));
   } else if (context === "someday") {
     body.appendChild(menuItemButton("Move up", act(() => moveTask(task, -1, tierList))));
@@ -718,10 +759,10 @@ function openRowMenu(task, { context, tierList }) {
   } else if (context === "done") {
     body.appendChild(menuItemButton("Reopen", act(() => completeTask(task))));
   }
-  // Note has no checkbox — 정리함(Archive) is its only way into Done, and
+  // Note has no checkbox — "Mark as Done" is its only way into Done, and
   // reuses the same status/doneAt/doneDate fields as completing a task.
   if (context !== "done" && kind === "note") {
-    body.appendChild(menuItemButton("Archive to Done", act(() => completeTask(task))));
+    body.appendChild(menuItemButton("Mark as Done", act(() => completeTask(task))));
   }
   if (context !== "done") {
     body.appendChild(menuItemButton("Change type", act(() => openKindSheet(task))));
@@ -998,6 +1039,15 @@ function taskRow(task, { context, tierList = [] }) {
   }
 
   const main = node("div", "main");
+  // Line 1 holds "Soon" (if any) and the title side by side, so the badge
+  // always sits inline right before the content on the same line, wrapping
+  // together only when the title itself runs long — not stacked below it.
+  const line1 = node("div", "main-line1");
+  if (context === "today" && kind === "task" && task.soon) {
+    const soonBadge = node("span", "soon-badge", "Soon");
+    soonBadge.setAttribute("aria-label", "Marked as soon — not required today, but kept visible as a reminder");
+    line1.appendChild(soonBadge);
+  }
   const titleEl = node("div", "title", task.title);
   // Someday Note cards clamp to 4 lines (plan §3-4); tapping toggles the
   // .expanded class. textContent only — no innerHTML.
@@ -1010,12 +1060,8 @@ function taskRow(task, { context, tierList = [] }) {
     titleEl.addEventListener("click", toggle);
     titleEl.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
   }
-  main.appendChild(titleEl);
-  if (context === "today" && kind === "task" && task.soon) {
-    const soonBadge = node("span", "soon-badge", "Soon");
-    soonBadge.setAttribute("aria-label", "Marked as soon — not required today, but kept visible as a reminder");
-    main.appendChild(soonBadge);
-  }
+  line1.appendChild(titleEl);
+  main.appendChild(line1);
   const progress = subtaskProgress(task);
   if (progress.total) main.appendChild(node("div", "sub-progress", `${progress.done}/${progress.total} subtasks`));
   row.appendChild(main);
