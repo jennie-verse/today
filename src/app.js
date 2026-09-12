@@ -13,7 +13,7 @@ import { toast, confirmDialog, announce } from "./ui.js";
 import { openSettingsSheet } from "./settings.js";
 
 import { initTimeline } from './timeline-ui.js';
-import { saveEntry } from './timeline-store.js';
+import { saveEntry, readSnapshot as readTimelineSnapshot } from './timeline-store.js';
 import { zoneNow, isoAt, formatClock as formatClockAmPm } from './timeline-time.js';
 import { recoverRestore } from './data-transfer.js';
 const $ = (id) => document.getElementById(id);
@@ -114,6 +114,7 @@ async function completeTask(task) {
   });
   await store.putTask(next);
   announce(`${next.title} ${done ? "completed" : "reopened"}`);
+  if (done && taskType(next) === "task") await maybeLogTaskToTimeline(next);
   await refresh();
 }
 
@@ -210,6 +211,8 @@ function openTaskEditor(task) {
   // Task/Event get this row; a Note has no time concept.
   const kind = taskType(task);
   let timeInput = null;
+  let endTimeInput = null;
+  let endTimeRow = null;
   if (!isNote) {
     const timeRow = node("div", "field-row");
     timeRow.style.display = "flex";
@@ -232,9 +235,46 @@ function openTaskEditor(task) {
     const clearTimeBtn = node("button", "btn ghost", "Clear");
     clearTimeBtn.type = "button";
     clearTimeBtn.setAttribute("aria-label", "Clear time");
-    clearTimeBtn.addEventListener("click", () => { timeInput.value = ""; });
+    clearTimeBtn.addEventListener("click", () => { timeInput.value = ""; updateEndTimeVisibility(); });
     timeRow.append(timeLabel, timeInput, clearTimeBtn);
     body.appendChild(timeRow);
+
+    // End time only makes sense alongside a start time — an all-day Event
+    // ("00:00", no start time) or a Task with no start time hides it. For a
+    // Task, giving both times here is what opts it into Timeline on save
+    // (see maybeSyncTimelineOnSave); for an Event a start time alone still
+    // triggers the end-time prompt on save if this is left blank.
+    endTimeRow = node("div", "field-row");
+    endTimeRow.style.display = "flex";
+    endTimeRow.style.alignItems = "center";
+    endTimeRow.style.gap = "8px";
+    endTimeRow.style.marginTop = "8px";
+    const endTimeLabel = node("label", "", "End time");
+    endTimeLabel.style.flex = "0 0 auto";
+    endTimeInput = document.createElement("input");
+    endTimeInput.type = "time";
+    endTimeInput.value = minutesToTimeValue(task.scheduledEndMinutes);
+    endTimeInput.style.flex = "0 0 auto";
+    endTimeInput.style.width = "140px";
+    const endTimeInputId = "task-editor-endtime-" + task.id;
+    endTimeInput.id = endTimeInputId;
+    endTimeLabel.setAttribute("for", endTimeInputId);
+    const clearEndTimeBtn = node("button", "btn ghost", "Clear");
+    clearEndTimeBtn.type = "button";
+    clearEndTimeBtn.setAttribute("aria-label", "Clear end time");
+    clearEndTimeBtn.addEventListener("click", () => { endTimeInput.value = ""; });
+    endTimeRow.append(endTimeLabel, endTimeInput, clearEndTimeBtn);
+    body.appendChild(endTimeRow);
+
+    function updateEndTimeVisibility() {
+      // Inline display:flex (set above) would otherwise outrank the
+      // `hidden` attribute's UA-stylesheet display:none, so toggle the
+      // inline style directly rather than `.hidden`.
+      endTimeRow.style.display = timeInput.value ? "flex" : "none";
+    }
+    timeInput.addEventListener("change", updateEndTimeVisibility);
+    timeInput.addEventListener("input", updateEndTimeVisibility);
+    updateEndTimeVisibility();
   }
 
   const foot = node("div", "sheet-foot");
@@ -254,10 +294,14 @@ function openTaskEditor(task) {
     if (!raw.trim()) { toast("Title is required."); return; }
     try {
       let next;
+      let startMinutes = null;
+      let endMinutes = null;
       if (isNote) {
         next = normalizeTask({ ...task, title: raw, type: "note" });
       } else {
         const parsed = parseNaturalLanguage(raw, { now: new Date() });
+        startMinutes = timeInput ? timeValueToMinutes(timeInput.value) : task.scheduledAtMinutes;
+        endMinutes = endTimeInput && startMinutes != null ? timeValueToMinutes(endTimeInput.value) : null;
         // Editing never changes kind — a Task stays a Task even if the text
         // or the time field includes a time; only "Change type" switches
         // kind. The time field is the single source of truth for the time
@@ -267,12 +311,14 @@ function openTaskEditor(task) {
           title: parsed.title,
           type: taskType(task),
           scheduledFor: parsed.scheduledFor ?? task.scheduledFor,
-          scheduledAtMinutes: timeInput ? timeValueToMinutes(timeInput.value) : task.scheduledAtMinutes,
+          scheduledAtMinutes: startMinutes,
+          scheduledEndMinutes: endMinutes,
         });
       }
       await store.putTask(next);
       close();
       toast("Task updated");
+      if (!isNote) await maybeSyncTimelineOnSave(next, startMinutes, endMinutes);
       await refresh();
     } catch (err) {
       toast(err?.message || "Couldn't update that task");
@@ -710,6 +756,208 @@ function timeValueToMinutes(value) {
   const m = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(String(value || ""));
   if (!m) return null;
   return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+}
+
+// ---------- Today -> Timeline handoff ----------
+//
+// A Task/Event only ever reaches Timeline through one of two paths: the Edit
+// sheet's Start/End time fields (below), or completing a Task from Today
+// (maybeLogTaskToTimeline). Both funnel into pushTimelineEntry, which keeps
+// a task and its Timeline entry linked via task.timelineEntryId so repeated
+// edits update the same entry instead of creating duplicates.
+
+function currentMinutesOfDay(date = new Date()) {
+  return date.getHours() * 60 + date.getMinutes();
+}
+
+function dayMinutesToMs(dateKeyStr, minutes) {
+  const [y, m, d] = String(dateKeyStr).split("-").map(Number);
+  return new Date(y, (m || 1) - 1, d || 1, Math.floor(minutes / 60), minutes % 60, 0, 0).getTime();
+}
+
+// Small time-only prompt — used both for "add a start time" (Done flow) and
+// "add an end time" (Edit sheet / Event save). Resolves the chosen "HH:MM",
+// or null if the user cancels/closes without picking one.
+function openTimePromptSheet({ title, initialValue = "" }) {
+  return new Promise((resolvePromise) => {
+    const overlay = node("div", "overlay");
+    const frame = node("div", "frame");
+    const sheet = node("div", "sheet");
+    sheet.setAttribute("role", "dialog");
+    sheet.setAttribute("aria-modal", "true");
+    const header = node("div", "sheet-hdr");
+    header.append(node("h2", "", title), (() => {
+      const b = node("button", "ico", "✕"); b.type = "button"; b.setAttribute("aria-label", "Close"); return b;
+    })());
+    const closeBtn = header.lastChild;
+
+    const body = node("div", "sheet-body");
+    const input = document.createElement("input");
+    input.type = "time";
+    input.value = initialValue;
+    input.style.width = "140px";
+    input.setAttribute("aria-label", title);
+    body.appendChild(input);
+
+    const foot = node("div", "sheet-foot");
+    const cancelBtn = node("button", "btn ghost", "Skip");
+    cancelBtn.type = "button";
+    const saveBtn = node("button", "btn primary", "Save");
+    saveBtn.type = "button";
+    foot.append(cancelBtn, saveBtn);
+
+    let settled = false;
+    function finish(value) {
+      if (settled) return;
+      settled = true;
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      document.removeEventListener("keydown", onKey);
+      resolvePromise(value);
+    }
+    function onKey(e) { if (e.key === "Escape" && !e.isComposing && e.keyCode !== 229) finish(null); }
+    closeBtn.addEventListener("click", () => finish(null));
+    cancelBtn.addEventListener("click", () => finish(null));
+    saveBtn.addEventListener("click", () => finish(timeValueToMinutes(input.value) != null ? input.value : null));
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) finish(null); });
+    document.addEventListener("keydown", onKey);
+
+    sheet.append(header, body, foot);
+    frame.appendChild(sheet);
+    overlay.appendChild(frame);
+    $("sheet-host").appendChild(overlay);
+    input.focus();
+  });
+}
+
+// Offered whenever a timed Event is saved with no end time yet (plan: "이 외
+// 정해진 시간이있는 event는 timeline에 넣을 end time 물어봐주기"). Three ways
+// out, matching the two "start but no end" cases plus deferring entirely:
+//   'end'   — user picked an end time just now
+//   'thin'  — done in under 5 minutes; log without an end time (Timeline
+//             already renders a no-end entry as a thin point marker)
+//   'later' — undecided; don't push to Timeline yet at all
+function openEndTimeChoiceSheet() {
+  return new Promise((resolvePromise) => {
+    const overlay = node("div", "overlay");
+    const frame = node("div", "frame");
+    const sheet = node("div", "sheet");
+    sheet.setAttribute("role", "dialog");
+    sheet.setAttribute("aria-modal", "true");
+    const header = node("div", "sheet-hdr");
+    header.append(node("h2", "", "Add to Timeline"), (() => {
+      const b = node("button", "ico", "✕"); b.type = "button"; b.setAttribute("aria-label", "Close"); return b;
+    })());
+    const closeBtn = header.lastChild;
+
+    const body = node("div", "sheet-body menu-list");
+    body.appendChild(node("p", "hint", "This event has a start time. Add an end time for Timeline?"));
+
+    function close() {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      document.removeEventListener("keydown", onKey);
+    }
+    function onKey(e) { if (e.key === "Escape" && !e.isComposing && e.keyCode !== 229) { close(); resolvePromise({ mode: "later" }); } }
+    function act(fn) { return () => { close(); fn(); }; }
+
+    body.appendChild(menuItemButton("Set end time…", act(async () => {
+      const value = await openTimePromptSheet({ title: "End time" });
+      resolvePromise(value != null ? { mode: "end", minutes: timeValueToMinutes(value) } : { mode: "later" });
+    })));
+    body.appendChild(menuItemButton("Under 5 minutes (no end time)", act(() => resolvePromise({ mode: "thin" }))));
+    body.appendChild(menuItemButton("Decide later", act(() => resolvePromise({ mode: "later" }))));
+
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) { close(); resolvePromise({ mode: "later" }); } });
+    document.addEventListener("keydown", onKey);
+    closeBtn.addEventListener("click", () => { close(); resolvePromise({ mode: "later" }); });
+
+    sheet.append(header, body);
+    frame.appendChild(sheet);
+    overlay.appendChild(frame);
+    $("sheet-host").appendChild(overlay);
+  });
+}
+
+// Creates or updates (via task.timelineEntryId) the Timeline entry for this
+// Task/Event. `endMinutes` may be null — Timeline already renders that as a
+// thin, no-duration marker (timeline-ui.js's recordCard/"Add end time").
+// Best-effort: a failure here never blocks the Today-side save that already
+// completed, matching the existing Focus handoff's saveEntry(...).catch().
+async function pushTimelineEntry(task, startMinutes, endMinutes, dateKeyStr) {
+  try {
+    const zone = zoneNow();
+    const startedAt = isoAt(dayMinutesToMs(dateKeyStr, startMinutes), zone);
+    const endedAt = Number.isFinite(endMinutes) ? isoAt(dayMinutesToMs(dateKeyStr, endMinutes), zone) : null;
+    let expectedRevision = null;
+    let entryId = task.timelineEntryId || undefined;
+    if (entryId) {
+      const snapshot = await readTimelineSnapshot(["timelineEntries"]);
+      const existing = (snapshot.timelineEntries || []).find((r) => r.id === entryId && !r.deletedAt);
+      if (existing) expectedRevision = existing.revisionId;
+      else entryId = undefined; // stale link (deleted elsewhere) — create fresh
+    }
+    const saved = await saveEntry(
+      { id: entryId, title: clampText(task.title, 140), startedAt, endedAt, timeZone: zone, isRunning: false },
+      { expectedRevision, allowFuture: true }
+    );
+    if (saved.id !== task.timelineEntryId) {
+      await store.putTask(normalizeTask({ ...task, timelineEntryId: saved.id }));
+    }
+    toast("Added to Timeline");
+  } catch (err) {
+    toast(err?.message || "Couldn't add to Timeline");
+  }
+}
+
+// Called after saving the Edit sheet for a non-Note row. A Task's time is
+// "필요시" (opt-in) — it's only sent to Timeline once the user has filled in
+// both Start and End themselves; no prompt is forced on a Task. An Event
+// with a real (non-all-day) time always gets the end-time prompt.
+async function maybeSyncTimelineOnSave(task, startMinutes, endMinutes) {
+  if (startMinutes == null) return; // all-day / no time set — never pushed
+  const dateKeyStr = task.scheduledFor || task.todayDate || todayKey();
+  if (taskType(task) === "event") {
+    let finalEnd = endMinutes;
+    if (finalEnd == null) {
+      const choice = await openEndTimeChoiceSheet();
+      if (choice.mode === "later") return;
+      finalEnd = choice.mode === "end" ? choice.minutes : null;
+    }
+    await pushTimelineEntry(task, startMinutes, finalEnd, dateKeyStr);
+  } else if (taskType(task) === "task") {
+    if (endMinutes == null) return; // opt-in — only push once both times are given
+    await pushTimelineEntry(task, startMinutes, endMinutes, dateKeyStr);
+  }
+}
+
+// Called right after a plain Task is checked off (plan: "done → timeline
+// 입력 여부 물어보기"). The moment Done was clicked becomes the end time; a
+// missing start time is offered as its own follow-up question rather than
+// assumed, so "now for both" stays a deliberate choice, not a guess.
+async function maybeLogTaskToTimeline(task) {
+  const logIt = await confirmDialog({
+    title: "Log to Timeline?",
+    message: `Add "${task.title}" to today's Timeline?`,
+    confirmLabel: "Log to Timeline",
+    cancelLabel: "Skip",
+  });
+  if (!logIt) return;
+  const nowMinutes = currentMinutesOfDay();
+  let startMinutes = task.scheduledAtMinutes;
+  if (startMinutes == null) {
+    const addStart = await confirmDialog({
+      title: "Add a start time?",
+      message: "No start time was set for this task.",
+      confirmLabel: "Add start time",
+      cancelLabel: "Use now for both",
+    });
+    if (addStart) {
+      const value = await openTimePromptSheet({ title: "Start time", initialValue: minutesToTimeValue(nowMinutes) });
+      startMinutes = value != null ? timeValueToMinutes(value) : nowMinutes;
+    } else {
+      startMinutes = nowMinutes;
+    }
+  }
+  await pushTimelineEntry(task, startMinutes, nowMinutes, task.doneDate || todayKey());
 }
 
 // Note has no checkbox (plan §1.3/§3-6) — a plain dash marker instead, kept

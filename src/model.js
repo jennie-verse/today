@@ -87,6 +87,15 @@ export function normalizeTask(draft) {
     todayDate: status === "today" ? (draft.todayDate || null) : null,
     scheduledFor: draft.scheduledFor || null,
     scheduledAtMinutes: Number.isFinite(draft.scheduledAtMinutes) ? draft.scheduledAtMinutes : null,
+    // End time is only meaningful alongside a start time — a Task/Event
+    // dropped back to no start time (all-day / undecided) also drops any
+    // end time it had, since a lone end time has no anchor.
+    scheduledEndMinutes: Number.isFinite(draft.scheduledAtMinutes) && Number.isFinite(draft.scheduledEndMinutes)
+      ? draft.scheduledEndMinutes : null,
+    // Links this row to the Timeline entry it was last pushed to (see
+    // app.js's pushTimelineEntry), so a later edit updates that same
+    // Timeline entry instead of creating a duplicate. null until first push.
+    timelineEntryId: draft.timelineEntryId || null,
     doneAt: status === "done" ? (draft.doneAt || new Date().toISOString()) : null,
     doneDate: status === "done" ? (draft.doneDate || dateKey(new Date())) : null,
     subtasks,

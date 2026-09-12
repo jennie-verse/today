@@ -1,2 +1,2 @@
 // Single build stamp for the app shell. Must match VERSION in ../sw.js.
-export const APP_BUILD = "2026.09.11-edittime1";
+export const APP_BUILD = "2026.09.11-timelinehandoff1";
