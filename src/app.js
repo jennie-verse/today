@@ -267,10 +267,15 @@ function openTaskEditor(task) {
     body.appendChild(endTimeRow);
 
     function updateEndTimeVisibility() {
+      // "00:00" is the app's all-day/no-time placeholder everywhere else
+      // (formatClock, the Today badge) — treated the same as empty here,
+      // so an all-day Event never shows an End time row to fill in.
+      const hasTime = timeInput.value && timeInput.value !== "00:00";
       // Inline display:flex (set above) would otherwise outrank the
       // `hidden` attribute's UA-stylesheet display:none, so toggle the
       // inline style directly rather than `.hidden`.
-      endTimeRow.style.display = timeInput.value ? "flex" : "none";
+      endTimeRow.style.display = hasTime ? "flex" : "none";
+      if (!hasTime) endTimeInput.value = "";
     }
     timeInput.addEventListener("change", updateEndTimeVisibility);
     timeInput.addEventListener("input", updateEndTimeVisibility);
@@ -301,7 +306,7 @@ function openTaskEditor(task) {
       } else {
         const parsed = parseNaturalLanguage(raw, { now: new Date() });
         startMinutes = timeInput ? timeValueToMinutes(timeInput.value) : task.scheduledAtMinutes;
-        endMinutes = endTimeInput && startMinutes != null ? timeValueToMinutes(endTimeInput.value) : null;
+        endMinutes = endTimeInput && hasRealTime(startMinutes) ? timeValueToMinutes(endTimeInput.value) : null;
         // Editing never changes kind — a Task stays a Task even if the text
         // or the time field includes a time; only "Change type" switches
         // kind. The time field is the single source of truth for the time
@@ -908,12 +913,20 @@ async function pushTimelineEntry(task, startMinutes, endMinutes, dateKeyStr) {
   }
 }
 
+// 00:00 is the app's existing all-day/"no time set" placeholder everywhere
+// else (formatClock, the Today time badge) — a literal midnight entered
+// into the new time field is treated the same way here, so it never
+// triggers an end-time prompt or a Timeline push on its own.
+function hasRealTime(minutes) {
+  return Number.isFinite(minutes) && minutes !== 0;
+}
+
 // Called after saving the Edit sheet for a non-Note row. A Task's time is
 // "필요시" (opt-in) — it's only sent to Timeline once the user has filled in
 // both Start and End themselves; no prompt is forced on a Task. An Event
 // with a real (non-all-day) time always gets the end-time prompt.
 async function maybeSyncTimelineOnSave(task, startMinutes, endMinutes) {
-  if (startMinutes == null) return; // all-day / no time set — never pushed
+  if (!hasRealTime(startMinutes)) return; // all-day / no time set — never pushed
   const dateKeyStr = task.scheduledFor || task.todayDate || todayKey();
   if (taskType(task) === "event") {
     let finalEnd = endMinutes;
@@ -943,7 +956,7 @@ async function maybeLogTaskToTimeline(task) {
   if (!logIt) return;
   const nowMinutes = currentMinutesOfDay();
   let startMinutes = task.scheduledAtMinutes;
-  if (startMinutes == null) {
+  if (!hasRealTime(startMinutes)) {
     const addStart = await confirmDialog({
       title: "Add a start time?",
       message: "No start time was set for this task.",
