@@ -87,7 +87,7 @@ export function taskActivityRecord(entry, task, { includeContent = true } = {}) 
       lastAt: entry.lastAt,
       ...(entry.destination === "today" || entry.destination === "someday" ? { destination: entry.destination } : {}),
       done: entry.done === true,
-      finalStatus: ["today", "someday", "done", "deleted"].includes(entry.finalStatus) ? entry.finalStatus : (entry.done ? "done" : entry.destination),
+      finalStatus: ["today", "someday", "done", "deleted", "canceled"].includes(entry.finalStatus) ? entry.finalStatus : (entry.done ? "done" : entry.destination),
       contentIncluded: includeContent,
       historyAccuracy: "exact",
     },

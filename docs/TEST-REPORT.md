@@ -138,3 +138,11 @@
 - **Soon 배지 위치**: 지금까지 항목 상자 아래, 제목 다음 줄에 표시되던 "Soon" 배지를 제목 앞으로 옮겨 같은 줄에 표시한다(제목이 길어 줄바꿈될 때만 배지 다음 줄로 넘어간다). `float`를 이용해 배지 주위로 제목이 자연스럽게 흐르도록 했다.
 - Delete는 기존과 동일하게 Today/Someday/Done, Task/Event/Note 모든 조합에서 이미 항상 노출되어 있었다(이번에 새로 추가한 것은 없음).
 - Today 자동 테스트 65→68개, Daybook 자동 테스트 65→66개 모두 통과. 브라우저(Chromium)로 (1) 긴 제목의 Task를 Today로 옮기고 Mark as Soon을 눌러 배지가 제목과 한 줄에 붙어 나오는 것, (2) Event를 추가한 뒤 `⋯` 메뉴에 Mark as Done/Mark as Cancel이 모두 보이는 것, (3) Mark as Cancel을 누르면 토스트와 함께 즉시 Today에서 빠지는 것을 확인했다. 콘솔 오류 0(페이지 자체 오류는 없음 — 로컬 정적 서버 환경에서 나타나는 무관한 스크립트 fetch 경고 1건은 기존에도 있던 것으로 이번 변경과 무관). 실제 iPhone/iPad Safari와 daybook 쪽 실기기 다중 기기 동기화(자정 경계에서 Event/Note가 실제로 소멸하고 Daybook에 정확히 한 번만 기록되는지)는 Pending — 직접 확인 필요.
+
+### 재검토(markcancel2) — Someday에 "Mark as Done"이 새어 나오던 것 수정
+
+사용자 재요청으로 표를 다시 대조하는 과정에서, `openRowMenu`의 "Mark as Done"(옛 "Archive to Done") 조건이 `context !== "done" && kind === "note"`로, `context === "today"` 분기 밖에 독립적으로 있던 기존 코드를 그대로 두고 있었던 것을 발견했다 — 즉 Someday의 Note에도 "Mark as Done"이 노출되고 있었다("someday 항목엔 mark as cancel/done-archive/soon이 불필요하다"는 이번 요청과 정면으로 어긋남). Event의 새 "Mark as Done"은 애초에 `context === "today"` 분기 안에 올바르게 넣었으므로 문제 없었다.
+
+- `today/src/app.js` — Note/Event의 "Mark as Done"을 하나의 조건(`kind === "event" || kind === "note"`)으로 합쳐 `context === "today"` 분기 안으로 옮기고, 분기 밖의 독립 조건은 제거했다.
+- `today/src/journal-record.js`, `today/src/journal.js` — `finalStatus` 화이트리스트에 `"canceled"`를 추가했다(사소한 메타데이터 정확성 문제 — 취소된 Task/Event의 활동 기록에서 `finalStatus`가 "today"로 잘못 표시되던 것을 고침. 렌더링에는 영향 없었다 — `todayDone()`이 `finalStatus`보다 먼저 boolean `done` 필드를 확인하기 때문).
+- Node 테스트 68개 그대로 통과. 브라우저로 Someday에 Note를 만들어 `⋯` 메뉴를 열어 Mark as Done이 더 이상 없고 Edit/Send to Focus/Move up/Move down/Move to Today/Change type/Turn into tasks/Delete만 있는 것을 확인했다. 빌드 스탬프를 `2026.09.12-markcancel2`로 올렸다.

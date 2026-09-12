@@ -739,10 +739,12 @@ function openRowMenu(task, { context, tierList }) {
     if (kind === "task") {
       body.appendChild(menuItemButton(task.soon ? "Unmark Soon" : "Mark as Soon", act(() => toggleSoon(task))));
     }
-    // Event has no checkbox (its leading marker is the time badge), so
-    // "Mark as Done" is its only path to Done — same route a Note's Archive
-    // action already uses (completeTask, gated purely on task.status).
-    if (kind === "event") {
+    // Event/Note have no checkbox, so "Mark as Done" is their only path to
+    // Done (completeTask, gated purely on task.status) — Task uses the
+    // circle checkbox instead. Someday must not offer this (per spec), which
+    // is why it lives inside this context === "today" branch rather than a
+    // standalone `kind === "note"` check.
+    if (kind === "event" || kind === "note") {
       body.appendChild(menuItemButton("Mark as Done", act(() => completeTask(task))));
     }
     // Mark as Cancel (Task/Event only, per spec — a Note has no cancelled
@@ -758,11 +760,6 @@ function openRowMenu(task, { context, tierList }) {
     body.appendChild(menuItemButton("Move to Today", act(() => promoteTask(task))));
   } else if (context === "done") {
     body.appendChild(menuItemButton("Reopen", act(() => completeTask(task))));
-  }
-  // Note has no checkbox — "Mark as Done" is its only way into Done, and
-  // reuses the same status/doneAt/doneDate fields as completing a task.
-  if (context !== "done" && kind === "note") {
-    body.appendChild(menuItemButton("Mark as Done", act(() => completeTask(task))));
   }
   if (context !== "done") {
     body.appendChild(menuItemButton("Change type", act(() => openKindSheet(task))));

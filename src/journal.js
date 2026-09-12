@@ -100,7 +100,7 @@ export function replaceActivityLedger(rows, { merge = false } = {}) {
         firstAt: row.firstAt, lastAt: row.lastAt,
         ...(["today", "someday"].includes(row.destination) ? { destination: row.destination } : {}),
         done: row.done === true,
-        ...(["today", "someday", "done", "deleted"].includes(row.finalStatus) ? { finalStatus: row.finalStatus } : {}),
+        ...(["today", "someday", "done", "deleted", "canceled"].includes(row.finalStatus) ? { finalStatus: row.finalStatus } : {}),
       };
     }
   }
