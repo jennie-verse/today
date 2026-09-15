@@ -13,7 +13,7 @@ import { toast, confirmDialog, announce } from "./ui.js";
 import { openSettingsSheet } from "./settings.js";
 
 import { initTimeline } from './timeline-ui.js';
-import { saveEntry, readSnapshot as readTimelineSnapshot } from './timeline-store.js';
+import { saveEntry, readSnapshot as readTimelineSnapshot, cleanEntry as cleanTimelineEntry } from './timeline-store.js';
 import { zoneNow, isoAt, formatClock as formatClockAmPm } from './timeline-time.js';
 import { recoverRestore } from './data-transfer.js';
 const $ = (id) => document.getElementById(id);
@@ -183,7 +183,15 @@ async function deferTask(task) {
 // Hands the task off to Focus (plan: today<->focus handoff) — opens Focus
 // with the title pre-filled so the user doesn't retype it there. Today keeps
 // its own copy of the task untouched; Focus decides what to do with it.
-function sendToFocus(task) {
+async function sendToFocus(task) {
+  // Starts a Current activity entry right away so the Timeline reflects the
+  // handoff even though Focus can't write back until the session ends — the
+  // user (or the completion handoff/auto-import) adds the end time later.
+  const zone = zoneNow();
+  try {
+    await saveEntry({ title: clampText(task.title, 140), startedAt: isoAt(Date.now(), zone), endedAt: null, timeZone: zone, isRunning: true }, { switchCurrent: true });
+    refresh();
+  } catch { /* best-effort; Focus still opens even if the Timeline entry couldn't start */ }
   const params = new URLSearchParams({ task: task.title, from: "today", taskId: task.id });
   location.href = `../focus/?${params.toString()}`;
 }
@@ -1275,17 +1283,49 @@ function wireAddBar() {
   wireAddKindChips();
 }
 
-// ---------- URL intake (?add=) — used by tide's "Send to today" ----------
+// ---------- URL intake (?add= / ?start=) — used by Focus's handoffs ----------
+
+// A running Focus session may already have started a Current activity entry
+// here (see sendToFocus / the ?start= branch below). Finishing it completes
+// that same entry instead of leaving it open forever and adding a duplicate;
+// the auto-import in sync-runner.js uses the same matching rule.
+async function completeOrCreateTimelineEntry({ title, startedAt, endedAt, zone }) {
+  try {
+    const snapshot = await readTimelineSnapshot(["timelineEntries"]);
+    const running = snapshot.timelineEntries.map(cleanTimelineEntry).find((r) => r.isRunning && !r.deletedAt && r.title === title);
+    if (running) {
+      await saveEntry({ ...running, endedAt, isRunning: false }, { expectedRevision: running.revisionId });
+      return;
+    }
+  } catch { /* fall through to creating a plain completed entry */ }
+  await saveEntry({ title, startedAt, endedAt, timeZone: zone, isRunning: false }, { allowFuture: true });
+}
 
 function handleUrlIntake() {
   let params;
   try { params = new URLSearchParams(location.search); } catch { return; }
   const add = params.get("add");
-  if (add == null) return;
+  const start = params.get("start");
   const fromParam = params.get("from");
   const startedAtRaw = params.get("startedAt");
   const endedAtRaw = params.get("endedAt");
   try { history.replaceState({}, "", location.pathname + location.hash); } catch { /* ignore */ }
+
+  // Focus hands off a session that just started, before it knows the end
+  // time — this starts a Current activity entry the same way Today's own
+  // Start button does, so an end time can be added manually whenever.
+  if (fromParam === "focus" && start != null && start.trim()) {
+    const title = clampText(start, 140);
+    const zone = zoneNow();
+    const startedAtMs = startedAtRaw ? Date.parse(startedAtRaw) : NaN;
+    saveEntry({ title, startedAt: isoAt(Number.isFinite(startedAtMs) ? startedAtMs : Date.now(), zone), endedAt: null, timeZone: zone, isRunning: true }, { switchCurrent: true })
+      .then(refresh)
+      .then(() => toast("Added to Today's timeline — add an end time when you finish."))
+      .catch(() => toast("Could not start a timeline entry."));
+    return;
+  }
+
+  if (add == null) return;
   if (!add.trim()) return;
 
   // Focus hands off a finished session, not a new someday item — it already
@@ -1301,10 +1341,10 @@ function handleUrlIntake() {
       title, type: "task", status: "done", order: nextOrder(state.tasks, "done"),
       doneAt: new Date(endedAtMs).toISOString(), doneDate: dateKey(new Date(endedAtMs)), source: "focus",
     }))
-      .then(() => saveEntry({
+      .then(() => completeOrCreateTimelineEntry({
         title: clampText(add, 140),
-        startedAt: isoAt(startedAtMs, zone), endedAt: isoAt(endedAtMs, zone), timeZone: zone, isRunning: false,
-      }, { allowFuture: true }).catch(() => { /* Timeline entry is best-effort; the Done task above is already saved */ }))
+        startedAt: isoAt(startedAtMs, zone), endedAt: isoAt(endedAtMs, zone), zone,
+      }).catch(() => { /* Timeline entry is best-effort; the Done task above is already saved */ }))
       .then(refresh)
       .then(() => toast("Logged from Focus"));
     return;

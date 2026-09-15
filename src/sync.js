@@ -42,6 +42,7 @@ export const KEYS = Object.freeze({
   enabled: "today.syncEnabled",
   lastSyncAt: "today.lastSyncAt",
   taskTombstones: "today.taskTombstones.v1",
+  importedFocusEvents: "today.importedFocusEvents.v1",
 });
 
 // GitHub Contents API는 1MB를 넘으면 읽기가 느려지고 커밋도 무거워집니다.
@@ -282,4 +283,60 @@ export async function pullData() {
   tasks = applyTaskTombstones(tasks, taskTombstones);
   writeItem(KEYS.lastSyncAt, String(Date.now()));
   return { tasks, taskTombstones };
+}
+
+/* ── Focus session auto-import ──────────────────────────────────────────
+   Focus publishes finished sessions to events/focus.<ctx>.<month>.json in
+   the same webapp-data repo (its own device-scoped context, unrelated to
+   today's own contextId — so this reads every focus.*.json file, not just
+   one). Today has no "Send to Focus" reply channel, so this is the only way
+   a session logged purely in Focus (no manual "Send to Today" tap) shows up
+   here automatically. Read-only: Today never writes to events/. */
+
+function getImportedFocusEventIds() {
+  const value = parseJson(readItem(KEYS.importedFocusEvents, "[]"), []);
+  return new Set(Array.isArray(value) ? value : []);
+}
+
+function saveImportedFocusEventIds(ids) {
+  // Cap growth — only the most recent ids need to be remembered to avoid
+  // re-importing; older monthly event files stop being worth re-scanning.
+  writeItem(KEYS.importedFocusEvents, JSON.stringify([...ids].slice(-1000)));
+}
+
+// Returns events not yet imported, without marking them — the caller marks
+// each id only after it successfully applies that event locally, so a
+// failed write gets retried on the next sync instead of being lost.
+export async function findUnimportedFocusEvents() {
+  if (!isReady()) return [];
+  const Shared = await api();
+  const cfg = config();
+  let entries;
+  try { entries = await Shared.listDir(cfg, "events"); }
+  catch { return []; }
+  const files = entries.filter((entry) => entry.type === "file" && /^focus\..+\.json$/i.test(entry.name));
+  const imported = getImportedFocusEventIds();
+  const fresh = [];
+  for (const entry of files) {
+    let file;
+    try { file = await Shared.readFile(cfg, entry.path); }
+    catch { continue; }
+    if (!file.exists) continue;
+    const events = parseJson(file.content, []);
+    if (!Array.isArray(events)) continue;
+    for (const event of events) {
+      if (!event || typeof event.id !== "string" || imported.has(event.id)) continue;
+      if (event.kind !== "session.completed" && event.kind !== "session.ended") continue;
+      if (!event.startedAt || !event.at || Number.isNaN(Date.parse(event.startedAt)) || Number.isNaN(Date.parse(event.at))) continue;
+      fresh.push(event);
+    }
+  }
+  return fresh;
+}
+
+export function markFocusEventsImported(ids) {
+  if (!ids || !ids.length) return;
+  const imported = getImportedFocusEventIds();
+  for (const id of ids) imported.add(id);
+  saveImportedFocusEventIds(imported);
 }

@@ -12,8 +12,9 @@
 
 import * as store from "./store.js";
 import * as sync from "./sync.js";
-import { onTimelineChange } from "./timeline-store.js";
+import { onTimelineChange, saveEntry, readSnapshot, cleanEntry } from "./timeline-store.js";
 import { runTimelineSync } from "./timeline-sync.js";
+import { zoneNow, isoAt } from "./timeline-time.js";
 
 // 공용 모듈과 같은 4초 디바운스입니다. 항목을 연달아 고칠 때 요청이 쌓이지 않게 합니다.
 const PUSH_DEBOUNCE_MS = 4000;
@@ -55,6 +56,36 @@ export function schedulePush() {
   pushTimer = setTimeout(() => { runSync().catch(() => {}); }, PUSH_DEBOUNCE_MS);
 }
 
+// Completes a matching Current activity entry (started via sendToFocus / the
+// ?start= handoff) instead of leaving it open and adding a duplicate; falls
+// back to a plain completed entry when no such entry is running.
+async function applyFocusEvent(event, zone) {
+  const title = String(event.title || "Focus session").slice(0, 140);
+  const startedAt = isoAt(Date.parse(event.startedAt), zone);
+  const endedAt = isoAt(Date.parse(event.at), zone);
+  const snapshot = await readSnapshot(["timelineEntries"]);
+  const running = snapshot.timelineEntries.map(cleanEntry).find((r) => r.isRunning && !r.deletedAt && r.title === title);
+  if (running) await saveEntry({ ...running, endedAt, isRunning: false }, { expectedRevision: running.revisionId });
+  else await saveEntry({ title, startedAt, endedAt, timeZone: zone, isRunning: false }, { allowFuture: true });
+}
+
+async function importFocusSessions() {
+  let events;
+  try { events = await sync.findUnimportedFocusEvents(); }
+  catch { return 0; }
+  if (!events.length) return 0;
+  const zone = zoneNow();
+  let imported = 0;
+  for (const event of events) {
+    try {
+      await applyFocusEvent(event, zone);
+      sync.markFocusEventsImported([event.id]);
+      imported += 1;
+    } catch { /* left unmarked — retried on the next sync */ }
+  }
+  return imported;
+}
+
 /** @returns {Promise<{skipped?:boolean, pulled?:number, error?:Error}>} */
 export function runSync() {
   if (inFlight) return inFlight;
@@ -63,10 +94,13 @@ export function runSync() {
     let timeline;
     try { timeline = await runTimelineSync(); }
     catch (error) { timeline = { error }; }
+    let focusImported = 0;
+    try { focusImported = await importFocusSessions(); }
+    catch { /* best-effort; next sync retries */ }
     const error = task?.error || timeline?.error;
     if (error) notify('error', { error });
-    else notify('idle', { pulled: (task?.pulled || 0) + (timeline?.pulled || 0) });
-    return { pulled: (task?.pulled || 0) + (timeline?.pulled || 0), ...(error ? { error } : {}) };
+    else notify('idle', { pulled: (task?.pulled || 0) + (timeline?.pulled || 0) + focusImported });
+    return { pulled: (task?.pulled || 0) + (timeline?.pulled || 0) + focusImported, ...(error ? { error } : {}) };
   })().finally(() => { inFlight = null; });
   return inFlight;
 }
