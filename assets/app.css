@@ -447,9 +447,11 @@ input[type="text"], input[type="password"], input[type="date"], input[type="time
 
 
 /* ---------- Foldable (iPhone Duo) unfolded + Mac wide windows ----------
-   Width-based only, so folding/unfolding while the app is open just re-flows.
-   Phone-size (< 760px) layout is untouched. */
-@media (min-width: 760px) {
+   Two tiers, both re-evaluated live when folding/unfolding.
+   Tier A "tablet portrait" (669x951 unfolded portrait, Mac windows): single column
+   that works at ~670px. The height guard keeps folded landscape (678x466) a phone.
+   Tier B "wide" (951x669 unfolded landscape, Mac): rails / wider columns. */
+@media (min-width: 640px) and (min-height: 560px) {
   #app-root { max-width: 760px; }
   /* Sheets become centered dialogs instead of full-width bottom sheets. */
   .overlay { align-items: center; }
@@ -457,15 +459,11 @@ input[type="text"], input[type="password"], input[type="date"], input[type="time
   .sheet { border-radius: 18px; max-height: 86dvh; }
   .timeline-dialog { width: min(560px, calc(100vw - 48px)); }
   .body-scroll { padding-inline: 16px; }
-}
-
-/* Unfolded / wide: Today on the left, Someday + Done on the right. */
-@media (min-width: 900px) {
-  #app-root { max-width: 1040px; }
+  /* Today + candidates | Someday + Done (each column ~300px+ at 669px). */
   .body-scroll {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    column-gap: 24px;
+    column-gap: 20px;
     align-content: start;
     align-items: start;
   }
@@ -476,6 +474,11 @@ input[type="text"], input[type="password"], input[type="date"], input[type="time
   .body-scroll > :not(.section) { grid-column: 1 / -1; }
   .timeline-content { padding-inline: 16px; }
   .timeline-toolbar, .timeline-viewbar { padding-inline: 16px; }
+}
+
+/* Tier B, unfolded landscape / wide Mac: wider app column. */
+@media (min-width: 900px) {
+  #app-root { max-width: 1040px; }
 }
 
 /* Mouse / trackpad (Mac) only. Nothing depends on hover. */

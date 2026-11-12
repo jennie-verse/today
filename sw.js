@@ -1,5 +1,5 @@
 // Keep VERSION in step with APP_BUILD in ./src/version.js.
-const VERSION = "2026.11.12-foldable1";
+const VERSION = "2026.11.12-foldable2";
 const CACHE_NAME = `today-${VERSION}`;
 
 const APP_SHELL = [
