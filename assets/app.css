@@ -35,7 +35,10 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 
-html, body { height: 100%; background: var(--bg); }
+html, body { height: 100%; background: var(--bg); overscroll-behavior: none; }
+
+/* No double-tap delay or double-tap zoom (pinch zoom is unchanged). */
+button, input, textarea, select, label, summary, a { touch-action: manipulation; }
 
 body {
   font-family: "Lexend", Verdana, "Trebuchet MS", "Segoe UI", Arial, sans-serif;
@@ -441,3 +444,47 @@ input[type="text"], input[type="password"], input[type="date"], input[type="time
 @media (max-width: 360px) { .timeline-fields { flex-direction: column; gap: 0; } .timeline-toolbar { gap: 0; } }
 
 @media(max-height:540px) and (max-width:430px){.timeline-composer{display:block}.timeline-composer .timeline-actions{margin-top:5px}.timeline-current{max-height:64px}}
+
+
+/* ---------- Foldable (iPhone Duo) unfolded + Mac wide windows ----------
+   Width-based only, so folding/unfolding while the app is open just re-flows.
+   Phone-size (< 760px) layout is untouched. */
+@media (min-width: 760px) {
+  #app-root { max-width: 760px; }
+  /* Sheets become centered dialogs instead of full-width bottom sheets. */
+  .overlay { align-items: center; }
+  .frame { max-width: 560px; padding-inline: 12px; }
+  .sheet { border-radius: 18px; max-height: 86dvh; }
+  .timeline-dialog { width: min(560px, calc(100vw - 48px)); }
+  .body-scroll { padding-inline: 16px; }
+}
+
+/* Unfolded / wide: Today on the left, Someday + Done on the right. */
+@media (min-width: 900px) {
+  #app-root { max-width: 1040px; }
+  .body-scroll {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 24px;
+    align-content: start;
+    align-items: start;
+  }
+  .body-scroll > #section-today { grid-column: 1; grid-row: 1; }
+  .body-scroll > #section-candidates { grid-column: 1; grid-row: 2; }
+  .body-scroll > .section:nth-of-type(3) { grid-column: 2; grid-row: 1 / span 2; }
+  .body-scroll > .section:nth-of-type(4) { grid-column: 2; grid-row: 3; }
+  .body-scroll > :not(.section) { grid-column: 1 / -1; }
+  .timeline-content { padding-inline: 16px; }
+  .timeline-toolbar, .timeline-viewbar { padding-inline: 16px; }
+}
+
+/* Mouse / trackpad (Mac) only. Nothing depends on hover. */
+@media (hover: hover) and (pointer: fine) {
+  .hdr .ico:hover, .sheet-hdr .ico:hover, .timeline-toolbar .ico:hover { background: var(--accent-tint); }
+  .chip:not([aria-pressed="true"]):hover, .today-tab:not([aria-current="page"]):hover, .menu-item:hover,
+  .btn:not(.primary):hover { background: var(--accent-tint); }
+  .btn.primary:hover, .add-bar button:hover { filter: brightness(0.97); }
+  .someday-row:hover, .candidate-row:hover { background: var(--accent-tint); }
+  .timeline-record:hover { border-color: var(--accent); }
+  .body-scroll, .timeline-content, .sheet-body { scrollbar-color: var(--accent) transparent; }
+}

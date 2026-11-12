@@ -2,7 +2,7 @@
 
 ## 홈 화면에 추가하기
 
-1. iPhone/iPad Safari에서 `https://jennie-verse.github.io/today/` 를 엽니다.
+1. iPhone·폴더블(iPhone Duo)·Mac Safari에서 `https://jennie-verse.github.io/today/` 를 엽니다.
 2. 공유(Share) → 홈 화면에 추가(Add to Home Screen).
 3. 홈 화면 아이콘으로 실행하면 브라우저 주소창 없이 앱처럼 동작합니다.
 

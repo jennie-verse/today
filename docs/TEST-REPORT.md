@@ -146,3 +146,11 @@
 - `today/src/app.js` — Note/Event의 "Mark as Done"을 하나의 조건(`kind === "event" || kind === "note"`)으로 합쳐 `context === "today"` 분기 안으로 옮기고, 분기 밖의 독립 조건은 제거했다.
 - `today/src/journal-record.js`, `today/src/journal.js` — `finalStatus` 화이트리스트에 `"canceled"`를 추가했다(사소한 메타데이터 정확성 문제 — 취소된 Task/Event의 활동 기록에서 `finalStatus`가 "today"로 잘못 표시되던 것을 고침. 렌더링에는 영향 없었다 — `todayDone()`이 `finalStatus`보다 먼저 boolean `done` 필드를 확인하기 때문).
 - Node 테스트 68개 그대로 통과. 브라우저로 Someday에 Note를 만들어 `⋯` 메뉴를 열어 Mark as Done이 더 이상 없고 Edit/Send to Focus/Move up/Move down/Move to Today/Change type/Turn into tasks/Delete만 있는 것을 확인했다. 빌드 스탬프를 `2026.09.12-markcancel2`로 올렸다.
+
+
+## 2026-11-12 폴더블(iPhone Duo)·Mac 최적화 검증
+
+- 변경: 760px 이상에서 시트를 가운데 대화상자로, 900px 이상(펼침)에서 Today와 Someday/Done을 2열로 배치, 마우스 hover 표시(Mac, hover 전용 기능 없음), 더블탭 지연 제거, 당겨서 출렁임 제거. 폰 폭(<760px) 레이아웃은 그대로입니다. 빌드 `2026.11.12-foldable1`(sw.js·src/version.js 일치, 테스트로 고정).
+- 자동 테스트 70건(layout 테스트 2건 추가)·문법 검사: 통과.
+- Chromium 360×780(접힘) / 840×760 / 1000×700(펼침) / 1440×900(Mac): 가로 넘침 없음, 콘솔·페이지 오류 없음, 메인 화면·Settings 배치 확인.
+- 실제 iPhone Duo 접기·펼치기 전환 실기기 테스트는 사용자가 quill에서만 했고, 이 앱은 **아직 실기기 확인 필요**입니다.
