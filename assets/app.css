@@ -456,8 +456,9 @@ input[type="text"], input[type="password"], input[type="date"], input[type="time
   /* Sheets become centered dialogs instead of full-width bottom sheets. */
   .overlay { align-items: center; }
   .frame { max-width: 560px; padding-inline: 12px; }
-  .sheet { border-radius: 18px; max-height: 86dvh; }
-  .timeline-dialog { width: min(560px, calc(100vw - 48px)); }
+  /* Centered, so keep the whole dialog clear of large top/bottom safe-area insets (symmetric). */
+  .sheet { border-radius: 18px; padding-bottom: 0; max-height: min(86dvh, calc(100dvh - 2 * max(env(safe-area-inset-top), env(safe-area-inset-bottom)) - 24px)); }
+  .timeline-dialog { width: min(560px, calc(100vw - 48px)); max-height: calc(100dvh - 2 * max(env(safe-area-inset-top), env(safe-area-inset-bottom)) - 24px); }
   .body-scroll { padding-inline: 16px; }
   /* Today + candidates | Someday + Done (each column ~300px+ at 669px). */
   .body-scroll {

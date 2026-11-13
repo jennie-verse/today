@@ -22,8 +22,17 @@ test('foldable/Mac layout rules exist and phone-size layout is not changed by th
   assert.match(css, /\.add-bar input \{[^}]*font-size: 16px/);
 });
 
+test('Tier A centered dialogs stay clear of large safe-area insets (symmetric max-height)', () => {
+  const css = read('../assets/app.css');
+  const tierA = css.slice(css.indexOf('@media (min-width: 640px) and (min-height: 560px)'));
+  const block = tierA.slice(0, tierA.indexOf('\n}\n'));
+  const guard = /2 \* max\(env\(safe-area-inset-top\), env\(safe-area-inset-bottom\)\)/;
+  assert.match(block, new RegExp('\\.sheet \\{[^}]*' + guard.source));
+  assert.match(block, new RegExp('\\.timeline-dialog \\{[^}]*max-height:[^}]*' + guard.source));
+});
+
 test('the build stamp in version.js matches VERSION in sw.js', () => {
   const stamp = read('../src/version.js').match(/APP_BUILD = ["']([^"']+)["']/)[1];
   assert.equal(read('../sw.js').match(/const VERSION = ["']([^"']+)["']/)[1], stamp);
-  assert.equal(stamp, '2026.11.12-foldable2');
+  assert.equal(stamp, '2026.11.12-foldable3');
 });
