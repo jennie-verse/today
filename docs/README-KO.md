@@ -6,6 +6,8 @@ Today는 할 일과 하루의 실제 활동을 기록하는 로컬 우선 웹앱
 
 저장소·배포 주소: `github.com/jennie-verse/today` → `https://jennie-verse.github.io/today/`
 
+사용 기기: iPhone Duo(접으면 폰, 펼치면 태블릿 크기)와 Mac Safari. 화면 폭에 따라 레이아웃이 바뀌며(펼치면 Tasks가 2열), 실행 중 접고 펼쳐도 입력 중인 내용이 유지됩니다.
+
 ## 파일 구조
 
 ```text

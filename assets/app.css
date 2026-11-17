@@ -285,6 +285,8 @@ a { color: inherit; }
 .overlay {
   position: fixed; inset: 0; background: rgba(74,58,64,0.35); display: flex; align-items: flex-end;
   justify-content: center; z-index: 50;
+  /* keep sheets between the landscape side safe-area insets (0 in portrait) */
+  padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right);
 }
 .frame { width: 100%; max-width: 640px; }
 .sheet {

@@ -34,5 +34,11 @@ test('Tier A centered dialogs stay clear of large safe-area insets (symmetric ma
 test('the build stamp in version.js matches VERSION in sw.js', () => {
   const stamp = read('../src/version.js').match(/APP_BUILD = ["']([^"']+)["']/)[1];
   assert.equal(read('../sw.js').match(/const VERSION = ["']([^"']+)["']/)[1], stamp);
-  assert.equal(stamp, '2026.11.12-foldable3');
+  assert.equal(stamp, '2026.11.17-duocheck1');
+});
+
+test('overlay sheets stay between the landscape side safe-area insets', () => {
+  const css = read('../assets/app.css');
+  const overlay = css.match(/\.overlay \{[^}]*\}/)?.[0] || '';
+  assert.match(overlay, /padding-left: env\(safe-area-inset-left\); padding-right: env\(safe-area-inset-right\);/);
 });

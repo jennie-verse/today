@@ -1,8 +1,8 @@
 {
   "id": "./",
-  "name": "Today — 3 tasks",
+  "name": "Today — tasks and timeline",
   "short_name": "Today",
-  "description": "Three tasks for today. Nothing carries over automatically.",
+  "description": "Today's tasks and a timeline of your day. Unfinished Today tasks carry over to the next day.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
