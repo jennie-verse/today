@@ -34,11 +34,21 @@ test('Tier A centered dialogs stay clear of large safe-area insets (symmetric ma
 test('the build stamp in version.js matches VERSION in sw.js', () => {
   const stamp = read('../src/version.js').match(/APP_BUILD = ["']([^"']+)["']/)[1];
   assert.equal(read('../sw.js').match(/const VERSION = ["']([^"']+)["']/)[1], stamp);
-  assert.equal(stamp, '2026.11.17-duocheck1');
+  assert.equal(stamp, '2026.11.17-duocheck2');
 });
 
 test('overlay sheets stay between the landscape side safe-area insets', () => {
   const css = read('../assets/app.css');
   const overlay = css.match(/\.overlay \{[^}]*\}/)?.[0] || '';
   assert.match(overlay, /padding-left: env\(safe-area-inset-left\); padding-right: env\(safe-area-inset-right\);/);
+});
+
+test('switch toggles are 44x44 tap targets: the visible 44x26 track is drawn by ::before, not by the button', () => {
+  const css = read('../assets/app.css');
+  const sw = css.match(/\.switch \{[^}]*\}/)?.[0] || '';
+  assert.match(sw, /width: 44px; height: 44px;/);
+  assert.match(sw, /background: transparent;/);
+  assert.match(css, /\.switch::before \{[^}]*inset: 9px 0;/);
+  assert.match(css, /\.switch\[aria-checked="true"\]::before \{ background: var\(--accent\); \}/);
+  assert.doesNotMatch(sw, /height: 26px/);
 });
